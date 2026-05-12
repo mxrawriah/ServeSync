@@ -426,11 +426,13 @@ app.post('/api/availability', (req, res) => {
     }
 
     // Insert new availability
-    const stmt = db.prepare('INSERT INTO availability (user_id, date, role, status) VALUES (?, ?, ?, ?)');
-    availability.forEach(item => {
-      stmt.run([userId, item.date, item.role, item.status]);
-    });
-    stmt.finalize();
+    if (availability && Array.isArray(availability)) {
+      const stmt = db.prepare('INSERT INTO availability (user_id, date, role, status) VALUES (?, ?, ?, ?)');
+      availability.forEach(item => {
+        stmt.run([userId, item.date, item.role, item.status]);
+      });
+      stmt.finalize();
+    }
 
     res.json({ message: 'Availability updated' });
   });
