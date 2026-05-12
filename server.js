@@ -113,6 +113,58 @@ function createTables() {
     status TEXT,
     FOREIGN KEY (user_id) REFERENCES users (id)
   )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS roster (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    leader_id INTEGER,
+    member_id INTEGER,
+    member_name TEXT,
+    date TEXT,
+    role TEXT,
+    FOREIGN KEY (leader_id) REFERENCES users (id),
+    FOREIGN KEY (member_id) REFERENCES users (id)
+  )`);
+}
+
+function buildUserPayload(userRow, availability, schedule, roster = []) {
+  return {
+    id: userRow.id,
+    name: `${userRow.first_name} ${userRow.last_name}`,
+    handle: userRow.handle,
+    email: userRow.email,
+    phone: userRow.phone || '',
+    bio: userRow.bio || '',
+    role: userRow.role,
+    availability: availability || [],
+    schedule: schedule || [],
+    roster: roster || []
+  };
+}
+
+function respondWithUserData(userRow, res) {
+  db.all(`SELECT date, role, status FROM availability WHERE user_id = ?`, [userRow.id], (err, availability) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    db.all(`SELECT date, role, status FROM schedule WHERE user_id = ?`, [userRow.id], (err, schedule) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      if (userRow.role !== 'leader') {
+        return res.json({ user: buildUserPayload(userRow, availability, schedule) });
+      }
+
+      db.all(`SELECT id, member_id AS memberId, member_name AS memberName, date, role FROM roster WHERE leader_id = ? ORDER BY date`, [userRow.id], (err, roster) => {
+        if (err) {
+          return res.status(500).json({ error: 'Database error' });
+        }
+
+        res.json({ user: buildUserPayload(userRow, availability, schedule, roster) });
+      });
+    });
+  });
 }
 
 // Passport configuration
@@ -190,32 +242,7 @@ app.get('/auth/google/callback',
 // Get current user
 app.get('/api/me', (req, res) => {
   if (req.user) {
-    // Get full user data like in login
-    db.all(`SELECT date, role, status FROM availability WHERE user_id = ?`, [req.user.id], (err, availability) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-
-      db.all(`SELECT date, role, status FROM schedule WHERE user_id = ?`, [req.user.id], (err, schedule) => {
-        if (err) {
-          return res.status(500).json({ error: 'Database error' });
-        }
-
-        res.json({
-          user: {
-            id: req.user.id,
-            name: `${req.user.first_name} ${req.user.last_name}`,
-            handle: req.user.handle,
-            email: req.user.email,
-            phone: req.user.phone || '',
-            bio: req.user.bio || '',
-            role: req.user.role,
-            availability: availability || [],
-            schedule: schedule || []
-          }
-        });
-      });
-    });
+    respondWithUserData(req.user, res);
   } else {
     res.status(401).json({ error: 'Not authenticated' });
   }
@@ -305,49 +332,53 @@ app.post('/api/login', (req, res) => {
       return res.status(400).json({ error: 'Invalid password' });
     }
 
-    // Get user data
-    db.all(`SELECT date, role, status FROM availability WHERE user_id = ?`, [user.id], (err, availability) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-
-      db.all(`SELECT date, role, status FROM schedule WHERE user_id = ?`, [user.id], (err, schedule) => {
-        if (err) {
-          return res.status(500).json({ error: 'Database error' });
-        }
-
-        res.json({
-          user: {
-            id: user.id,
-            name: `${user.first_name} ${user.last_name}`,
-            handle: user.handle,
-            email: user.email,
-            phone: user.phone || '',
-            bio: user.bio || '',
-            role: user.role,
-            availability: availability || [],
-            schedule: schedule || []
-          }
-        });
-      });
-    });
+    respondWithUserData(user, res);
   });
 });
 
 // Get all members (for leader view)
 app.get('/api/members', (req, res) => {
-  db.all(`SELECT id, first_name, last_name, handle, role FROM users WHERE role = 'member'`, [], (err, rows) => {
+  db.all(`
+    SELECT
+      users.id,
+      users.first_name,
+      users.last_name,
+      users.handle,
+      users.role,
+      availability.date AS availability_date,
+      availability.role AS availability_role,
+      availability.status AS availability_status
+    FROM users
+    LEFT JOIN availability ON availability.user_id = users.id
+    WHERE users.role = 'member'
+    ORDER BY users.id, availability.date
+  `, [], (err, rows) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
     }
 
-    const members = rows.map(row => ({
-      id: row.id,
-      name: `${row.first_name} ${row.last_name}`,
-      handle: row.handle,
-      role: row.role,
-      availability: [] // Would need to join with availability table
-    }));
+    const membersById = new Map();
+    rows.forEach(row => {
+      if (!membersById.has(row.id)) {
+        membersById.set(row.id, {
+          id: row.id,
+          name: `${row.first_name} ${row.last_name}`,
+          handle: row.handle,
+          role: row.role,
+          availability: []
+        });
+      }
+
+      if (row.availability_date) {
+        membersById.get(row.id).availability.push({
+          date: row.availability_date,
+          role: row.availability_role,
+          status: row.availability_status
+        });
+      }
+    });
+
+    const members = Array.from(membersById.values());
 
     res.json({ members });
   });
@@ -433,6 +464,90 @@ app.post('/api/availability', (req, res) => {
     stmt.finalize();
 
     res.json({ message: 'Availability updated' });
+  });
+});
+
+app.post('/api/schedule', (req, res) => {
+  const { userId, schedule } = req.body;
+
+  db.run('DELETE FROM schedule WHERE user_id = ?', [userId], (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    const stmt = db.prepare('INSERT INTO schedule (user_id, date, role, status) VALUES (?, ?, ?, ?)');
+    (schedule || []).forEach(item => {
+      stmt.run([userId, item.date, item.role, item.status]);
+    });
+    stmt.finalize();
+
+    res.json({ message: 'Schedule updated' });
+  });
+});
+
+app.post('/api/roster', (req, res) => {
+  const { leaderId, memberId, memberName, date, role } = req.body;
+
+  db.run(
+    'INSERT INTO roster (leader_id, member_id, member_name, date, role) VALUES (?, ?, ?, ?, ?)',
+    [leaderId, memberId, memberName, date, role],
+    function(err) {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      db.run(
+        'INSERT INTO schedule (user_id, date, role, status) VALUES (?, ?, ?, ?)',
+        [memberId, date, role, 'confirmed'],
+        (scheduleErr) => {
+          if (scheduleErr) {
+            return res.status(500).json({ error: 'Database error' });
+          }
+
+          res.json({
+            message: 'Roster assignment saved',
+            rosterItem: {
+              id: this.lastID,
+              memberId,
+              memberName,
+              date,
+              role
+            }
+          });
+        }
+      );
+    }
+  );
+});
+
+app.delete('/api/roster/:id', (req, res) => {
+  const rosterId = Number(req.params.id);
+
+  db.get('SELECT member_id AS memberId, date, role FROM roster WHERE id = ?', [rosterId], (err, rosterItem) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    if (!rosterItem) {
+      return res.status(404).json({ error: 'Roster item not found' });
+    }
+
+    db.run('DELETE FROM roster WHERE id = ?', [rosterId], (deleteErr) => {
+      if (deleteErr) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      db.run(
+        'DELETE FROM schedule WHERE user_id = ? AND date = ? AND role = ? AND status = ?',
+        [rosterItem.memberId, rosterItem.date, rosterItem.role, 'confirmed'],
+        (scheduleErr) => {
+          if (scheduleErr) {
+            return res.status(500).json({ error: 'Database error' });
+          }
+
+          res.json({ message: 'Roster item removed' });
+        }
+      );
+    });
   });
 });
 
