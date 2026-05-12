@@ -687,17 +687,22 @@ async function submitAvailability() {
   if (!data.member.availability.length) { showToast('No availability to submit.','error'); return; }
   const previousSchedule = [...data.member.schedule];
   const previousAvailability = [...data.member.availability];
+  const memberRecord = (data.members || []).find(m => m.id === data.member.id || m.handle === data.member.handle || m.name === data.member.name);
+  const previousMemberAvailability = memberRecord ? [...(memberRecord.availability || [])] : null;
   data.member.availability.filter(a=>a.status==='yes').forEach(a=>{
     if (!data.member.schedule.find(s=>s.date===fmtDate(a.date)&&s.role===a.role))
       data.member.schedule.push({date:fmtDate(a.date),role:a.role,status:'pending'});
   });
   data.leader.notifications.unshift({id:Date.now(),type:'calendar',title:'Availability submitted',sub:data.member.name+' submitted new availability',time:'Just now',unread:true});
+  data.member.availability = [];
+  if (memberRecord) memberRecord.availability = [];
 
   try {
     await persistMemberScheduleState();
   } catch (error) {
     data.member.schedule = previousSchedule;
     data.member.availability = previousAvailability;
+    if (memberRecord) memberRecord.availability = previousMemberAvailability;
     console.error('Error saving availability submission:', error);
     showToast('Could not save your schedule. Please try again.','error');
     return;
