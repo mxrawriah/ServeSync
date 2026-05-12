@@ -146,6 +146,7 @@ function checkPw(pw) {
 function normalizeUserState(user) {
   user.schedule = user.schedule || [];
   user.availability = user.availability || [];
+  user.availabilityDraft = user.availabilityDraft || [];
   user.messages = user.messages || [];
   user.notifications = user.notifications || [];
   user.sent = user.sent || [];
@@ -412,11 +413,12 @@ function renderMemberSchedule() {
     ? data.member.schedule.map(s=>`<tr><td>${s.date}</td><td><span class="role-badge">${s.role}</span></td><td><span class="chip ${s.status}">${s.status==='confirmed'?'✓ Confirmed':'⏳ Pending'}</span></td></tr>`).join('')
     : '<tr><td colspan="3" style="text-align:center;color:var(--gray-400);padding:18px;font-size:13px">No upcoming schedule</td></tr>';
   const ab = document.getElementById('avail-table-body');
-  ab.innerHTML = data.member.availability.length
-    ? data.member.availability.map((a,i)=>`<tr>
+  const availabilityDraft = data.member.availabilityDraft || [];
+  ab.innerHTML = availabilityDraft.length
+    ? availabilityDraft.map((a,i)=>`<tr>
         <td>${fmtDate(a.date)}</td>
-        <td><select class="avail-select" onchange="data.member.availability[${i}].role=this.value">${ROLES_LIST.map(r=>`<option ${r===a.role?'selected':''}>${r}</option>`).join('')}</select></td>
-        <td><select class="avail-select" onchange="data.member.availability[${i}].status=this.value"><option value="yes" ${a.status==='yes'?'selected':''}>Yes ✓</option><option value="no" ${a.status==='no'?'selected':''}>No ✗</option></select></td>
+        <td><select class="avail-select" onchange="data.member.availabilityDraft[${i}].role=this.value">${ROLES_LIST.map(r=>`<option ${r===a.role?'selected':''}>${r}</option>`).join('')}</select></td>
+        <td><select class="avail-select" onchange="data.member.availabilityDraft[${i}].status=this.value"><option value="yes" ${a.status==='yes'?'selected':''}>Yes ✓</option><option value="no" ${a.status==='no'?'selected':''}>No ✗</option></select></td>
         <td><button onclick="rmAvail(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px">✕</button></td>
       </tr>`).join('')
     : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:14px;font-size:12px">No availability added yet</td></tr>';
@@ -696,35 +698,52 @@ function addAvailRow() {
   const role = document.getElementById('avail-role').value;
   const status = document.getElementById('avail-status').value;
   if (!date) { showToast('Please select a date.','error'); return; }
-  data.member.availability.push({date,role,status});
-  data.members[0].availability.push({date,role,status});
+  data.member.availabilityDraft = data.member.availabilityDraft || [];
+  data.member.availabilityDraft.push({date,role,status});
   renderMemberSchedule();
   document.getElementById('add-avail-form').classList.remove('show');
   showToast('Added to availability.','success');
 }
 
-function rmAvail(i) { data.member.availability.splice(i,1); renderMemberSchedule(); }
+function rmAvail(i) {
+  data.member.availabilityDraft = data.member.availabilityDraft || [];
+  data.member.availabilityDraft.splice(i,1);
+  renderMemberSchedule();
+}
+
+function mergeAvailabilityEntries(existing, incoming) {
+  const merged = [...existing];
+  incoming.forEach(entry => {
+    const existingIndex = merged.findIndex(item => item.date === entry.date && item.role === entry.role);
+    if (existingIndex >= 0) merged[existingIndex] = entry;
+    else merged.push(entry);
+  });
+  return merged;
+}
 
 async function submitAvailability() {
-  if (!data.member.availability.length) { showToast('No availability to submit.','error'); return; }
+  const availabilityDraft = data.member.availabilityDraft || [];
+  if (!availabilityDraft.length) { showToast('No availability to submit.','error'); return; }
   const previousSchedule = [...data.member.schedule];
   const previousAvailability = [...data.member.availability];
+  const previousAvailabilityDraft = [...availabilityDraft];
   const memberRecord = (data.members || []).find(m => m.id === data.member.id || m.handle === data.member.handle || m.name === data.member.name);
   const previousMemberAvailability = memberRecord ? [...(memberRecord.availability || [])] : null;
-  data.member.availability.filter(a=>a.status==='yes').forEach(a=>{
+  availabilityDraft.filter(a=>a.status==='yes').forEach(a=>{
     if (!data.member.schedule.find(s=>s.date===fmtDate(a.date)&&s.role===a.role))
       data.member.schedule.push({date:fmtDate(a.date),role:a.role,status:'pending'});
   });
   data.leader.notifications.unshift({id:Date.now(),type:'calendar',title:'Availability submitted',sub:data.member.name+' submitted new availability',time:'Just now',unread:true});
-  data.member.availability = [];
-  if (memberRecord) memberRecord.availability = [];
+  data.member.availability = mergeAvailabilityEntries(data.member.availability || [], previousAvailabilityDraft);
+  data.member.availabilityDraft = [];
+  if (memberRecord) memberRecord.availability = mergeAvailabilityEntries(memberRecord.availability || [], previousAvailabilityDraft);
 
   try {
     await persistMemberScheduleState();
-    data.member.availability = [];
   } catch (error) {
     data.member.schedule = previousSchedule;
     data.member.availability = previousAvailability;
+    data.member.availabilityDraft = previousAvailabilityDraft;
     if (memberRecord) memberRecord.availability = previousMemberAvailability;
     console.error('Error saving availability submission:', error);
     showToast('Could not save your schedule. Please try again.','error');
