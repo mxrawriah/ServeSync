@@ -143,6 +143,16 @@ function checkPw(pw) {
   const lbl=document.getElementById('pw-lbl'); lbl.textContent=l[s-1]||''; lbl.style.color=c[s-1]||'var(--gray-500)';
 }
 
+function normalizeUserState(user) {
+  user.schedule = user.schedule || [];
+  user.availability = user.availability || [];
+  user.messages = user.messages || [];
+  user.notifications = user.notifications || [];
+  user.sent = user.sent || [];
+  if (user.role === 'leader') user.roster = user.roster || [];
+  return user;
+}
+
 function demoLogin(role) {
   setAuthRole(role);
   showToast('Loading ' + (role==='leader'?'Leader':'Member') + ' demo...','success');
@@ -173,11 +183,7 @@ function handleLogin(e) {
       showToast(result.error, 'error');
     } else {
       // Store user data globally and provide default arrays
-      const user = result.user;
-      user.schedule = user.schedule || [];
-      user.availability = user.availability || [];
-      user.messages = user.messages || [];
-      user.notifications = user.notifications || [];
+      const user = normalizeUserState(result.user);
       localStorage.setItem('servesync_user', JSON.stringify(user));
       if (user.role === 'leader') {
         data.leader = user;
@@ -223,11 +229,7 @@ function handleSignup(e) {
     if (result.error) {
       showToast(result.error, 'error');
     } else {
-      const user = result.user;
-      user.schedule = user.schedule || [];
-      user.availability = user.availability || [];
-      user.messages = user.messages || [];
-      user.notifications = user.notifications || [];
+      const user = normalizeUserState(result.user);
       localStorage.setItem('servesync_user', JSON.stringify(user));
       if (user.role === 'leader') {
         data.leader = user;
@@ -429,7 +431,6 @@ function renderLeaderDash() {
   document.getElementById('stat-roster').textContent = (data.leader && data.leader.roster ? data.leader.roster.length : 0);
   const allAvails = (data.members || []).flatMap(m=>m.availability || []);
   document.getElementById('stat-responses').textContent = allAvails.length;
-
   const ar = document.getElementById('leader-avail-resp');
   if (!allAvails.length) { ar.innerHTML='<div class="empty" style="padding:20px 0"><p>No responses yet</p></div>'; }
   else ar.innerHTML = (data.members || []).flatMap(m=>(m.availability || []).map(a=>({...a,memberName:m.name}))).map(a=>{
@@ -704,15 +705,27 @@ function addAvailRow() {
 
 function rmAvail(i) { data.member.availability.splice(i,1); renderMemberSchedule(); }
 
-function submitAvailability() {
+async function submitAvailability() {
   if (!data.member.availability.length) { showToast('No availability to submit.','error'); return; }
+  const previousSchedule = [...data.member.schedule];
+  const previousAvailability = [...data.member.availability];
   data.member.availability.filter(a=>a.status==='yes').forEach(a=>{
     if (!data.member.schedule.find(s=>s.date===fmtDate(a.date)&&s.role===a.role))
       data.member.schedule.push({date:fmtDate(a.date),role:a.role,status:'pending'});
   });
   data.leader.notifications.unshift({id:Date.now(),type:'calendar',title:'Availability submitted',sub:data.member.name+' submitted new availability',time:'Just now',unread:true});
-  data.member.availability = [];
-  saveAvailability(data.member.schedule);
+
+  try {
+    await persistMemberScheduleState();
+    data.member.availability = [];
+  } catch (error) {
+    data.member.schedule = previousSchedule;
+    data.member.availability = previousAvailability;
+    console.error('Error saving availability submission:', error);
+    showToast('Could not save your schedule. Please try again.','error');
+    return;
+  }
+
   renderMemberSchedule();
   updateBadges();
 
@@ -751,19 +764,37 @@ function toggleAssignForm() {
   }
 }
 
-function addRosterItem() {
+async function addRosterItem() {
   const date = document.getElementById('assign-date').value;
   const memberId = parseInt(document.getElementById('assign-member').value);
   const role = document.getElementById('assign-role').value;
   if (!date||!memberId) { showToast('Please select a date and member.','error'); return; }
   const member = data.members.find(m=>m.id===memberId);
   if (!member) return;
-  data.leader.roster.push({id:Date.now(),memberId,memberName:member.name,date:fmtDate(date),role});
-  data.member.schedule.push({date:fmtDate(date),role,status:'confirmed'});
-  data.member.notifications.unshift({id:Date.now(),type:'schedule',title:'New assignment!',sub:`${fmtDate(date)} – ${role} assigned by leader`,time:'Just now',unread:true});
-  data.member.messages.unshift({id:Date.now(),from:'Pastor Rico',subject:`${role} – ${fmtDate(date)}`,time:'Just now',unread:true,
-    thread:[{role:'incoming',sender:'Pastor Rico',text:`Hi ${member.name.split(' ')[0]}! You have been assigned as ${role} on ${fmtDate(date)}. Please confirm your attendance. God bless!`,time:'Just now'}]
-  });
+
+  try {
+    const response = await fetch('/api/roster', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leaderId: data.leader.id,
+        memberId,
+        memberName: member.name,
+        date: fmtDate(date),
+        role
+      })
+    });
+    const result = await response.json();
+    if (!response.ok || result.error) throw new Error(result.error || 'Unable to save assignment.');
+
+    data.leader.roster.push(result.rosterItem);
+    persistCurrentUser();
+  } catch (error) {
+    console.error('Error saving roster assignment:', error);
+    showToast('Could not save assignment. Please try again.','error');
+    return;
+  }
+
   document.getElementById('assign-form').classList.remove('show');
   renderRoster();
   document.getElementById('stat-roster').textContent = data.leader.roster.length;
@@ -771,8 +802,19 @@ function addRosterItem() {
   showToast(`${member.name.split(' ')[0]} assigned as ${role} on ${fmtDate(date)}!`,'success');
 }
 
-function removeRoster(id) {
+async function removeRoster(id) {
+  try {
+    const response = await fetch(`/api/roster/${id}`, { method: 'DELETE' });
+    const result = await response.json();
+    if (!response.ok || result.error) throw new Error(result.error || 'Unable to remove assignment.');
+  } catch (error) {
+    console.error('Error removing roster assignment:', error);
+    showToast('Could not remove assignment.','error');
+    return;
+  }
+
   data.leader.roster = data.leader.roster.filter(r=>r.id!==id);
+  persistCurrentUser();
   renderRoster();
   document.getElementById('stat-roster').textContent = data.leader.roster.length;
   showToast('Assignment removed.','success');
@@ -1120,6 +1162,57 @@ function showToast(msg, type) {
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2800);
 }
 
+function persistCurrentUser() {
+  const user = currentRole === 'leader' ? data.leader : data.member;
+  localStorage.setItem('servesync_user', JSON.stringify(user));
+}
+
+async function persistMemberScheduleState() {
+  if (!data.member.id) {
+    persistCurrentUser();
+    return;
+  }
+
+  const responses = await Promise.all([
+    fetch('/api/availability', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: data.member.id, availability: data.member.availability })
+    }),
+    fetch('/api/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: data.member.id, schedule: data.member.schedule })
+    })
+  ]);
+
+  const results = await Promise.all(responses.map(async response => {
+    const text = await response.text();
+    let payload = {};
+
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        throw new Error(response.ok ? 'Unexpected server response.' : `Request failed with status ${response.status}.`);
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(payload.error || `Request failed with status ${response.status}.`);
+    }
+
+    return payload;
+  }));
+
+  const failedResult = results.find(result => result.error);
+  if (failedResult) {
+    throw new Error(failedResult.error);
+  }
+
+  persistCurrentUser();
+}
+
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){document.querySelectorAll('.modal-backdrop').forEach(m=>m.classList.remove('show'));}
 });
@@ -1128,7 +1221,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   // Check for existing session or stored user
   const storedUser = localStorage.getItem('servesync_user');
   if (storedUser) {
-    const user = JSON.parse(storedUser);
+    const user = normalizeUserState(JSON.parse(storedUser));
     if (user.role === 'leader') {
       data.leader = user;
       currentRole = 'leader';
@@ -1143,11 +1236,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     .then(response => response.json())
     .then(result => {
       if (result.user) {
-        const user = result.user;
-        user.schedule = user.schedule || [];
-        user.availability = user.availability || [];
-        user.messages = user.messages || [];
-        user.notifications = user.notifications || [];
+        const user = normalizeUserState(result.user);
         localStorage.setItem('servesync_user', JSON.stringify(user));
         if (user.role === 'leader') {
           data.leader = user;
