@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>ServeSync — Volunteer Scheduling</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Open+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="servesync.css"/>
+</head>
+<body>
+<body>
+
+<!-- ═══════════════════════════════
+     AUTH PAGE
+═══════════════════════════════ -->
+<div id="auth-page">
+  <div class="auth-card">
+    <div class="auth-card-header" id="auth-header">
+      <div class="auth-logo">
+        <svg viewBox="0 0 120 120" fill="none">
+          <circle cx="60" cy="60" r="56" stroke="white" stroke-width="3" stroke-opacity=".5"/>
+          <path d="M30 68L30 90L90 90L90 68" stroke="white" stroke-width="3" fill="none" stroke-linejoin="round"/>
+          <path d="M22 68L60 34L98 68" stroke="white" stroke-width="3" fill="none" stroke-linejoin="round"/>
+          <line x1="60" y1="48" x2="60" y2="80" stroke="white" stroke-width="3.5"/>
+          <line x1="50" y1="61" x2="70" y2="61" stroke="white" stroke-width="3.5"/>
+          <rect x="51" y="76" width="18" height="14" rx="9" stroke="white" stroke-width="2" fill="none"/>
+        </svg>
+      </div>
+      <div class="auth-appname">SERVESYNC</div>
+      <div class="auth-tagline">Volunteer scheduling made seamless</div>
+      <div class="auth-role-toggle">
+        <button class="auth-role-btn active" id="role-btn-member" onclick="setAuthRole('member')">👤 Member</button>
+        <button class="auth-role-btn" id="role-btn-leader" onclick="setAuthRole('leader')">⭐ Leader</button>
+      </div>
+    </div>
+    <div class="auth-body">
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-signin" onclick="switchAuthTab('signin')">Sign In</button>
+        <button class="auth-tab" id="tab-signup" onclick="switchAuthTab('signup')">Sign Up</button>
+      </div>
+
+      <!-- SIGN IN -->
+      <div class="auth-panel active" id="panel-signin">
+        <div class="auth-heading">Welcome back!</div>
+        <div class="auth-sub">Sign in to your account</div>
+        <div class="role-badge-inline member" id="signin-role-badge">👤 Signing in as Member</div>
+        <form onsubmit="handleLogin(event)" autocomplete="off">
+          <div class="fgrp"><label class="flabel">Email</label><input type="email" class="finput" id="login-email" placeholder="you@email.com" autocomplete="off" required/></div>
+          <div class="fgrp"><label class="flabel">Password</label>
+            <div class="fwrap"><input type="password" class="finput pr" id="login-pw" placeholder="Enter your password" autocomplete="off" required/>
+              <button type="button" class="eye-btn" onclick="togglePw('login-pw',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="eye-icon"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
+          </div>
+          <span class="forgot-link" onclick="showToast('Password reset link sent!','success')">Forgot password?</span>
+          <button type="submit" class="btn-primary" id="signin-btn">SIGN IN AS MEMBER</button>
+          <div class="divider">or continue with</div>
+          <button type="button" class="btn-google" onclick="handleGoogleLogin()">
+            <svg class="google-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            Continue with Google
+          </button>
+        </form>
+        <div class="auth-switch-text">No account? <span onclick="switchAuthTab('signup')">Sign up →</span></div>
+        <div style="margin-top:16px">
+          <div class="demo-lbl">Quick Demo</div>
+          <div class="demo-btns">
+            <button class="demo-btn member-demo" onclick="demoLogin('member')">👤 Member Demo</button>
+            <button class="demo-btn leader-demo" onclick="demoLogin('leader')">⭐ Leader Demo</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SIGN UP -->
+      <div class="auth-panel" id="panel-signup">
+        <div class="auth-heading">Create account</div>
+        <div class="auth-sub">Join ServeSync and start serving</div>
+        <div class="role-badge-inline member" id="signup-role-badge">👤 Signing up as Member</div>
+        <form onsubmit="handleSignup(event)" autocomplete="off">
+          <div class="frow">
+            <div class="fgrp" style="margin:0"><label class="flabel">First Name</label><input type="text" class="finput" id="signup-first" placeholder="First" autocomplete="off" required/></div>
+            <div class="fgrp" style="margin:0"><label class="flabel">Last Name</label><input type="text" class="finput" id="signup-last" placeholder="Last" autocomplete="off" required/></div>
+          </div>
+          <div class="fgrp"><label class="flabel">Email</label><input type="email" class="finput" id="signup-email" placeholder="you@email.com" autocomplete="off" required/></div>
+          <div class="fgrp"><label class="flabel">Password</label>
+            <div class="fwrap"><input type="password" class="finput pr" id="signup-pw" placeholder="Min 8 characters" autocomplete="off" required oninput="checkPw(this.value)"/>
+              <button type="button" class="eye-btn" onclick="togglePw('signup-pw',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="eye-icon"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
+            <div id="pw-strength-wrap" style="display:none">
+              <div class="pw-bars"><div class="pw-bar" id="pb1"></div><div class="pw-bar" id="pb2"></div><div class="pw-bar" id="pb3"></div><div class="pw-bar" id="pb4"></div></div>
+              <span class="pw-lbl" id="pw-lbl"></span>
+            </div>
+          </div>
+          <div class="fgrp"><label class="flabel">Confirm Password</label>
+            <div class="fwrap"><input type="password" class="finput pr" id="signup-confirm" placeholder="Repeat password" autocomplete="off" required/>
+              <button type="button" class="eye-btn" onclick="togglePw('signup-confirm',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="eye-icon"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
+          </div>
+          <button type="submit" class="btn-primary" id="signup-btn">CREATE MEMBER ACCOUNT</button>
+          <div class="divider">or continue with</div>
+          <button type="button" class="btn-google" onclick="handleGoogleLogin()">
+            <svg class="google-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            Continue with Google
+          </button>
+          <div class="auth-terms" style="margin-top:10px">By signing up you agree to our <a>Terms</a> &amp; <a>Privacy Policy</a></div>
+        </form>
+        <div class="auth-switch-text">Have an account? <span onclick="switchAuthTab('signin')">Sign in →</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════
+     APP
+═══════════════════════════════ -->
+<div id="app">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header" id="sidebar-header">
+      <div class="sidebar-avatar" onclick="goTo('profile')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" id="sidebar-avatar-svg"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        <img id="sidebar-avatar-img" style="display:none"/>
+        <div class="sidebar-avatar-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
+      </div>
+      <div class="sidebar-name" id="sidebar-name">Mariah D. Dano-og</div>
+      <div class="sidebar-handle" id="sidebar-handle">@mkdganda</div>
+      <div class="sidebar-role-chip" id="sidebar-role-chip">👤 Member</div>
+    </div>
+
+    <nav class="sidebar-nav" id="sidebar-nav">
+      <!-- Populated by JS based on role -->
+    </nav>
+
+    <div class="sidebar-footer">
+      <button class="btn-logout" onclick="handleLogout()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Log Out
+      </button>
+    </div>
+  </aside>
+
+  <!-- MAIN AREA -->
+  <div class="main-area">
+    <header class="topbar">
+      <div class="topbar-title" id="topbar-title">Dashboard</div>
+      <div class="topbar-right">
+        <button class="topbar-icon-btn" onclick="goTo('notification')" title="Notifications">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <div class="notif-dot" id="notif-dot" style="display:none"></div>
+        </button>
+        <button class="topbar-icon-btn" onclick="goTo('profile')" title="Profile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ── MEMBER: DASHBOARD ── -->
+    <div class="page" id="dashboard-page">
+      <div class="page-header">
+        <div class="page-title" id="dash-greeting">Good morning! 👋</div>
+        <div class="page-subtitle" id="dash-date"></div>
+      </div>
+      <div class="grid-3" style="margin-bottom:20px">
+        <div class="stat-card"><div class="stat-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div class="stat-num" id="stat-upcoming">2</div><div class="stat-lbl">Upcoming</div></div>
+        <div class="stat-card"><div class="stat-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></div><div class="stat-num">14</div><div class="stat-lbl">Times Served</div></div>
+        <div class="stat-card"><div class="stat-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="stat-num" id="stat-messages">2</div><div class="stat-lbl">Messages</div></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Upcoming Schedule</div>
+          <table class="tbl"><thead><tr><th>Date</th><th>Role</th><th>Status</th></tr></thead><tbody id="dash-sched-body"></tbody></table>
+        </div>
+        <div class="card">
+          <div class="card-hrow"><div class="card-title">Recent Messages</div><button class="btn-sm btn-orange" onclick="goTo('inbox')">View All →</button></div>
+          <div id="dash-inbox-preview"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── MEMBER: SCHEDULE ── -->
+    <div class="page" id="schedule-page">
+      <div class="page-header"><div class="page-title">My Schedule</div><div class="page-subtitle">View your assignments and submit availability</div></div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Upcoming Assignments</div>
+          <table class="tbl"><thead><tr><th>Date</th><th>Role</th><th>Status</th></tr></thead><tbody id="member-sched-body"></tbody></table>
+        </div>
+        <div class="card">
+          <div class="card-hrow">
+            <div class="card-title">Submit Availability</div>
+            <button class="btn-sm btn-orange" onclick="toggleAddForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Date</button>
+          </div>
+          <div class="add-form" id="add-avail-form">
+            <div class="add-form-row">
+              <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">DATE</label><input type="date" id="avail-date"/></div>
+              <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">ROLE</label>
+                <select id="avail-role"><option>Usher</option><option>Multimedia</option><option>Worship Team</option><option>Creatives</option><option>Social Media</option><option>Production</option><option>Service Lead</option><option>Preacher</option><option>Performing Arts</option><option>Design Team</option><option>Maintenance and Repair</option><option>Housekeeping</option></select>
+              </div>
+            </div>
+            <div class="add-form-row">
+              <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">AVAILABLE</label><select id="avail-status"><option value="yes">Yes ✓</option><option value="no">No ✗</option></select></div>
+              <div style="display:flex;align-items:flex-end"><button class="btn-primary-sm" onclick="addAvailRow()" style="width:100%">Add</button></div>
+            </div>
+          </div>
+          <table class="tbl"><thead><tr><th>Date</th><th>Role</th><th>Available</th><th></th></tr></thead><tbody id="avail-table-body"></tbody></table>
+          <div style="display:flex;justify-content:flex-end;margin-top:14px">
+            <button class="btn-primary-sm" onclick="submitAvailability()">Submit Availability</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── MEMBER: INBOX ── -->
+    <div class="page" id="inbox-page">
+      <div class="page-header"><div class="page-title">Inbox</div><div class="page-subtitle">Your messages and conversations</div></div>
+      <div class="inbox-filters">
+        <button class="inbox-filter-btn active" id="mf-all" onclick="setMsgFilter('all','member')">All</button>
+        <button class="inbox-filter-btn" id="mf-unread" onclick="setMsgFilter('unread','member')">Unread</button>
+        <button class="inbox-filter-btn" id="mf-sent" onclick="setMsgFilter('sent','member')">Sent</button>
+      </div>
+      <div class="inbox-list" id="member-inbox-list"></div>
+      <button class="compose-btn" onclick="openCompose()" title="Compose">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      </button>
+    </div>
+
+    <!-- ── MESSAGE DETAIL ── -->
+    <div class="page" id="message-detail-page">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <button class="btn-sm btn-orange" onclick="goToInbox()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>Back to Inbox</button>
+        <button class="btn-sm btn-red-sm" onclick="deleteCurrentMessage()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>Delete</button>
+      </div>
+      <div class="msg-detail-header">
+        <div class="msg-detail-subject" id="msg-subject"></div>
+        <div class="msg-meta-row">
+          <div class="msg-meta-avatar" id="msg-avatar"></div>
+          <div class="msg-meta-info"><div class="msg-meta-from" id="msg-from"></div><div class="msg-meta-to" id="msg-to"></div></div>
+          <div class="msg-meta-time" id="msg-time"></div>
+        </div>
+      </div>
+      <div class="msg-thread" id="msg-thread"></div>
+      <div class="reply-box">
+        <textarea class="reply-textarea" id="reply-input" placeholder="Type your reply..." rows="2"
+          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"
+          onkeydown="replyKeydown(event)"></textarea>
+        <button class="reply-send-btn" onclick="sendReply()">Send Reply</button>
+      </div>
+    </div>
+
+    <!-- ── MEMBER: NOTIFICATIONS ── -->
+    <div class="page" id="notification-page">
+      <div class="page-header" style="display:flex;align-items:center;justify-content:space-between">
+        <div><div class="page-title">Notifications</div><div class="page-subtitle">Stay updated on your assignments</div></div>
+        <button class="btn-sm btn-orange" onclick="markAllRead('member')">Mark all read</button>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden"><div style="padding:20px" id="notif-list"></div></div>
+    </div>
+
+    <!-- ── MEMBER: PROFILE ── -->
+    <div class="page" id="profile-page">
+      <div class="profile-hero">
+        <div class="profile-avatar-big" onclick="document.getElementById('member-avatar-input').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" id="member-prof-svg"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          <img id="member-prof-img" style="display:none"/>
+          <div class="profile-avatar-edit-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
+        </div>
+        <input type="file" id="member-avatar-input" accept="image/*" style="display:none" onchange="handleMemberAvatar(event)"/>
+        <div class="profile-info">
+          <div class="profile-name-big" id="member-prof-name">Mariah D. Dano-og</div>
+          <div class="profile-handle-big" id="member-prof-handle">@mkdganda</div>
+          <div class="profile-role-chip">👤 Member</div>
+        </div>
+      </div>
+      <div class="profile-tabs">
+        <button class="ptab active" id="mpt-about" onclick="switchMemberProfTab('about')">About</button>
+        <button class="ptab" id="mpt-edit" onclick="switchMemberProfTab('edit')">Edit Profile</button>
+        <button class="ptab" id="mpt-settings" onclick="switchMemberProfTab('settings')">Settings</button>
+      </div>
+      <div id="mpp-about">
+        <div class="card"><div class="card-title">Bio</div><div class="bio-text"><em id="member-bio-placeholder">No bio yet. Click Edit Profile to add one.</em><span id="member-bio-text" style="display:none"></span></div></div>
+      </div>
+      <div id="mpp-edit" style="display:none">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">Edit Bio</div>
+            <textarea class="bio-textarea" id="member-bio-input" placeholder="Tell something about yourself..."></textarea>
+            <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn-primary-sm" onclick="saveMemberBio()">Save Bio</button></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Actions</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <button class="btn-outline-sm" onclick="showEditNameModal('member')">Edit Display Name</button>
+              <button class="btn-outline-sm" onclick="document.getElementById('member-avatar-input').click()">Change Photo</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="mpp-settings" style="display:none">
+        <div class="card"><div class="card-title">Account Details</div><div id="member-acct-fields"></div></div>
+        <div style="margin-bottom:14px"><div class="setting-section-title">Notifications</div>
+          <div class="setting-group">
+            <div class="setting-row" style="cursor:default"><div class="setting-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><span class="setting-label">Schedule Updates</span><label class="toggle-switch"><input type="checkbox" checked onchange="showToast('Schedule notifications '+(this.checked?'enabled':'disabled')+'.','success')"/><span class="toggle-slider"></span></label></div>
+            <div class="setting-row" style="cursor:default"><div class="setting-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div><span class="setting-label">Announcements</span><label class="toggle-switch"><input type="checkbox" checked onchange="showToast('Announcement notifications '+(this.checked?'enabled':'disabled')+'.','success')"/><span class="toggle-slider"></span></label></div>
+            <div class="setting-row" style="cursor:default"><div class="setting-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div><span class="setting-label">Messages</span><label class="toggle-switch"><input type="checkbox" onchange="showToast('Message notifications '+(this.checked?'enabled':'disabled')+'.','success')"/><span class="toggle-slider"></span></label></div>
+          </div>
+        </div>
+        <div class="setting-group">
+          <div class="setting-row" onclick="document.getElementById('delete-modal').classList.add('show')"><div class="setting-icon danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div><span class="setting-label danger">Delete Account</span><div class="setting-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></div></div>
+          <div class="setting-row" style="cursor:default"><span class="setting-label" style="color:var(--gray-400)">App Version</span><span class="setting-value">v2.0.0</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── LEADER: DASHBOARD ── -->
+    <div class="page" id="leader-dashboard-page">
+      <div class="page-header"><div class="page-title" id="leader-greeting">Good morning! 👋</div><div class="page-subtitle" id="leader-date"></div></div>
+      <div class="grid-3" style="margin-bottom:20px">
+        <div class="stat-card" style="--accent:#1565C0;--accent-bg:#E3F2FD"><div class="stat-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="stat-num" id="stat-members">4</div><div class="stat-lbl">Members</div></div>
+        <div class="stat-card" style="--accent:#1565C0;--accent-bg:#E3F2FD"><div class="stat-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div class="stat-num" id="stat-roster">3</div><div class="stat-lbl">Rostered</div></div>
+        <div class="stat-card" style="--accent:#1565C0;--accent-bg:#E3F2FD"><div class="stat-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><div class="stat-num" id="stat-responses">3</div><div class="stat-lbl">Responses</div></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title" style="color:var(--blue)">Availability Responses</div>
+          <div id="leader-avail-resp"></div>
+        </div>
+        <div class="card">
+          <div class="card-hrow"><div class="card-title" style="color:var(--blue)">Recent Messages</div><button class="btn-sm btn-blue" onclick="goTo('leader-inbox')">View All →</button></div>
+          <div id="leader-dash-inbox"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── LEADER: ROSTER ── -->
+    <div class="page" id="leader-roster-page">
+      <div class="page-header"><div class="page-title">Roster Management</div><div class="page-subtitle">Assign members to service roles</div></div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-hrow">
+            <div class="card-title" style="color:var(--blue)">Create Assignment</div>
+            <button class="btn-sm btn-blue" onclick="toggleAssignForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Assignment</button>
+          </div>
+          <div class="add-form" id="assign-form" style="background:var(--blue-bg)">
+            <div class="add-form-row">
+              <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">DATE</label><input type="date" id="assign-date"/></div>
+              <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">MEMBER</label><select id="assign-member"><option value="">Select member...</option></select></div>
+            </div>
+            <div class="add-form-row">
+              <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">ROLE</label>
+                <select id="assign-role"><option>Usher</option><option>Multimedia</option><option>Worship Team</option><option>Creatives</option><option>Social Media</option><option>Production</option><option>Service Lead</option><option>Preacher</option><option>Performing Arts</option><option>Design Team</option><option>Maintenance and Repair</option><option>Housekeeping</option></select>
+              </div>
+              <div style="display:flex;align-items:flex-end"><button class="btn-primary-sm" onclick="addRosterItem()" style="width:100%;background:#1565C0">Assign</button></div>
+            </div>
+          </div>
+          <div id="roster-list"></div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color:var(--blue)">Members</div>
+          <div id="members-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── LEADER: REGISTERED USERS ── -->
+    <div class="page" id="leader-users-page">
+      <div class="page-header"><div class="page-title">Registered Users</div><div class="page-subtitle">View every account stored in the database</div></div>
+      <div class="card">
+        <div class="card-hrow">
+          <div class="card-title">All Users</div>
+          <div class="user-tools">
+            <input type="text" class="search-input" id="user-search" placeholder="Search by name, email, or role" oninput="filterUsers()" />
+            <button class="btn-sm btn-secondary" onclick="refreshUsers()">Refresh</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="tbl">
+            <thead><tr>
+              <th class="sortable" id="th-user-id" onclick="setUserSort('id')">ID</th>
+              <th class="sortable" id="th-user-name" onclick="setUserSort('name')">Name</th>
+              <th class="sortable" id="th-user-email" onclick="setUserSort('email')">Email</th>
+              <th class="sortable" id="th-user-role" onclick="setUserSort('role')">Role</th>
+              <th class="sortable" id="th-user-handle" onclick="setUserSort('handle')">Handle</th>
+              <th class="sortable" id="th-user-created" onclick="setUserSort('created_at')">Created</th>
+              <th>Action</th>
+            </tr></thead>
+            <tbody id="users-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── LEADER: INBOX ── -->
+    <div class="page" id="leader-inbox-page">
+      <div class="page-header"><div class="page-title">Inbox</div><div class="page-subtitle">Messages from your ministry team</div></div>
+      <div class="inbox-filters">
+        <button class="inbox-filter-btn active" id="lf-all" onclick="setMsgFilter('all','leader')">All</button>
+        <button class="inbox-filter-btn" id="lf-unread" onclick="setMsgFilter('unread','leader')">Unread</button>
+        <button class="inbox-filter-btn" id="lf-sent" onclick="setMsgFilter('sent','leader')">Sent</button>
+      </div>
+      <div class="inbox-list" id="leader-inbox-list"></div>
+      <button class="compose-btn" onclick="openCompose()" title="Compose" style="background:#1565C0">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      </button>
+    </div>
+
+    <!-- ── LEADER: NOTIFICATIONS ── -->
+    <div class="page" id="leader-notification-page">
+      <div class="page-header" style="display:flex;align-items:center;justify-content:space-between">
+        <div><div class="page-title">Notifications</div><div class="page-subtitle">Activity from your ministry team</div></div>
+        <button class="btn-sm btn-blue" onclick="markAllRead('leader')">Mark all read</button>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden"><div style="padding:20px" id="leader-notif-list"></div></div>
+    </div>
+
+    <!-- ── LEADER: PROFILE ── -->
+    <div class="page" id="leader-profile-page">
+      <div class="profile-hero" style="background:linear-gradient(135deg,#1565C0,#0D47A1)">
+        <div class="profile-avatar-big" onclick="document.getElementById('leader-avatar-input').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" id="leader-prof-svg"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          <img id="leader-prof-img" style="display:none"/>
+          <div class="profile-avatar-edit-badge" style="--accent:#1565C0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
+        </div>
+        <input type="file" id="leader-avatar-input" accept="image/*" style="display:none" onchange="handleLeaderAvatar(event)"/>
+        <div class="profile-info">
+          <div class="profile-name-big" id="leader-prof-name">Pastor Rico</div>
+          <div class="profile-handle-big" id="leader-prof-handle">@pastorrico</div>
+          <div class="profile-role-chip">⭐ Ministry Leader</div>
+        </div>
+      </div>
+      <div class="profile-tabs">
+        <button class="ptab active" id="lpt-about" onclick="switchLeaderProfTab('about')">About</button>
+        <button class="ptab" id="lpt-edit" onclick="switchLeaderProfTab('edit')">Edit Profile</button>
+        <button class="ptab" id="lpt-settings" onclick="switchLeaderProfTab('settings')">Settings</button>
+      </div>
+      <div id="lpp-about">
+        <div class="card"><div class="card-title" style="color:#1565C0">Bio</div><div class="bio-text"><em id="leader-bio-placeholder">No bio yet. Click Edit Profile to add one.</em><span id="leader-bio-text" style="display:none"></span></div></div>
+      </div>
+      <div id="lpp-edit" style="display:none">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title" style="color:#1565C0">Edit Bio</div>
+            <textarea class="bio-textarea" id="leader-bio-input" placeholder="Tell something about yourself..." style="border-color:#90CAF9"></textarea>
+            <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn-primary-sm" style="background:#1565C0" onclick="saveLeaderBio()">Save Bio</button></div>
+          </div>
+          <div class="card">
+            <div class="card-title" style="color:#1565C0">Actions</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <button class="btn-sm btn-blue" style="width:100%;justify-content:center;padding:10px" onclick="showEditNameModal('leader')">Edit Display Name</button>
+              <button class="btn-sm btn-blue" style="width:100%;justify-content:center;padding:10px" onclick="document.getElementById('leader-avatar-input').click()">Change Photo</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="lpp-settings" style="display:none">
+        <div class="card" style="border-color:#90CAF9"><div class="card-title" style="color:#1565C0">Account Details</div><div id="leader-acct-fields"></div></div>
+        <div style="margin-bottom:14px"><div class="setting-section-title">Notifications</div>
+          <div class="setting-group">
+            <div class="setting-row" style="cursor:default"><div class="setting-icon" style="background:#E3F2FD"><svg viewBox="0 0 24 24" fill="none" stroke="#1565C0" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><span class="setting-label">Availability Submissions</span><label class="toggle-switch"><input type="checkbox" checked onchange="showToast('Availability notifications '+(this.checked?'enabled':'disabled')+'.','success')"/><span class="toggle-slider" style=""></span></label></div>
+            <div class="setting-row" style="cursor:default"><div class="setting-icon" style="background:#E3F2FD"><svg viewBox="0 0 24 24" fill="none" stroke="#1565C0" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div><span class="setting-label">Messages</span><label class="toggle-switch"><input type="checkbox" checked onchange="showToast('Message notifications '+(this.checked?'enabled':'disabled')+'.','success')"/><span class="toggle-slider"></span></label></div>
+          </div>
+        </div>
+        <div class="setting-group">
+          <div class="setting-row" onclick="document.getElementById('delete-modal').classList.add('show')"><div class="setting-icon danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div><span class="setting-label danger">Delete Account</span><div class="setting-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></div></div>
+          <div class="setting-row" style="cursor:default"><span class="setting-label" style="color:var(--gray-400)">App Version</span><span class="setting-value">v2.0.0</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main-area -->
+</div><!-- /app -->
+
+<!-- ═══ MODALS ═══ -->
+<div class="modal-backdrop" id="delete-modal">
+  <div class="modal-box">
+    <div class="modal-danger-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+    <div class="modal-title" style="color:var(--red)">Delete Account</div>
+    <div class="modal-body">This action is permanent. All your schedule history, messages, and data will be deleted.</div>
+    <div class="modal-actions"><button class="btn-modal-cancel" onclick="document.getElementById('delete-modal').classList.remove('show')">Cancel</button><button class="btn-modal-danger" onclick="confirmDelete()">Yes, Delete</button></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="edit-name-modal">
+  <div class="modal-box" style="max-width:380px">
+    <div style="font-family:'Montserrat',sans-serif;font-size:17px;font-weight:800;color:var(--accent);margin-bottom:14px">Edit Display Name</div>
+    <input type="text" class="finput" id="edit-name-input" style="margin-bottom:14px"/>
+    <div class="modal-actions"><button class="btn-modal-cancel" onclick="document.getElementById('edit-name-modal').classList.remove('show')">Cancel</button><button class="btn-primary" style="flex:1.5;border-radius:10px;padding:12px" onclick="saveEditName()">Save</button></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="compose-modal">
+  <div class="modal-box" style="max-width:480px">
+    <div style="font-family:'Montserrat',sans-serif;font-size:17px;font-weight:800;color:var(--gray-900);margin-bottom:16px">New Message</div>
+    <div class="compose-field"><label class="compose-label">To</label><input type="text" class="finput" id="compose-to" placeholder="Recipient name or @handle"/></div>
+    <div class="compose-field"><label class="compose-label">Subject</label><input type="text" class="finput" id="compose-subject" placeholder="Message subject"/></div>
+    <div class="compose-field"><label class="compose-label">Message</label><textarea class="bio-textarea" id="compose-body" placeholder="Write your message..." style="min-height:100px"></textarea></div>
+    <div class="modal-actions"><button class="btn-modal-cancel" onclick="document.getElementById('compose-modal').classList.remove('show')">Cancel</button><button class="btn-primary" style="flex:2;border-radius:10px;padding:12px" onclick="sendComposedMessage()">Send Message</button></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="flash-modal">
+  <div class="modal-box" style="max-width:500px">
+    <div class="flash-header-box">
+      <div class="flash-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div class="flash-htitle">Availability Submitted!</div>
+      <div class="flash-hsub">Here's your complete schedule</div>
+    </div>
+    <div style="font-family:'Montserrat',sans-serif;font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--gray-500);margin:16px 0 10px">Your Full Schedule</div>
+    <div id="flash-list"></div>
+    <button class="btn-primary" style="margin-top:16px" onclick="document.getElementById('flash-modal').classList.remove('show');showToast('Schedule updated!','success')">Got it!</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="servesync.js"></script>
+</body>
+</html>
