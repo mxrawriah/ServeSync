@@ -362,11 +362,13 @@ function goTo(target) {
   if (target==='schedule') renderMemberSchedule();
   if (target==='inbox') renderInbox('member');
   if (target==='notification') renderNotifs('member');
+  if (target==='profile') renderMemberProfile();
   if (target==='leader-dashboard') renderLeaderDash();
   if (target==='leader-roster') renderRoster();
   if (target==='leader-users') renderLeaderUsers();
   if (target==='leader-inbox') renderInbox('leader');
   if (target==='leader-notification') renderNotifs('leader');
+  if (target==='leader-profile') renderLeaderProfile();
 
   updateBadges();
   window.scrollTo(0,0);
@@ -409,7 +411,6 @@ function renderMemberSchedule() {
   sb.innerHTML = data.member.schedule.length
     ? data.member.schedule.map(s=>`<tr><td>${s.date}</td><td><span class="role-badge">${s.role}</span></td><td><span class="chip ${s.status}">${s.status==='confirmed'?'✓ Confirmed':'⏳ Pending'}</span></td></tr>`).join('')
     : '<tr><td colspan="3" style="text-align:center;color:var(--gray-400);padding:18px;font-size:13px">No upcoming schedule</td></tr>';
-
   const ab = document.getElementById('avail-table-body');
   ab.innerHTML = data.member.availability.length
     ? data.member.availability.map((a,i)=>`<tr>
@@ -658,6 +659,27 @@ function renderNotifs(who) {
 }
 
 // ════════════════════════════════════════
+// PROFILE RENDER
+// ════════════════════════════════════════
+function renderMemberProfile() {
+  const user = data.member;
+  document.getElementById('member-prof-name').textContent = user.name;
+  document.getElementById('member-prof-handle').textContent = user.handle;
+  document.getElementById('member-bio-text').textContent = user.bio || '';
+  document.getElementById('member-bio-placeholder').style.display = user.bio ? 'none' : 'inline';
+  document.getElementById('member-bio-text').style.display = user.bio ? 'inline' : 'none';
+}
+
+function renderLeaderProfile() {
+  const user = data.leader;
+  document.getElementById('leader-prof-name').textContent = user.name;
+  document.getElementById('leader-prof-handle').textContent = user.handle;
+  document.getElementById('leader-bio-text').textContent = user.bio || '';
+  document.getElementById('leader-bio-placeholder').style.display = user.bio ? 'none' : 'inline';
+  document.getElementById('leader-bio-text').style.display = user.bio ? 'inline' : 'none';
+}
+
+// ════════════════════════════════════════
 // SCHEDULE ACTIONS
 // ════════════════════════════════════════
 function toggleAddForm() {
@@ -695,6 +717,7 @@ async function submitAvailability() {
 
   try {
     await persistMemberScheduleState();
+    data.member.availability = [];
   } catch (error) {
     data.member.schedule = previousSchedule;
     data.member.availability = previousAvailability;
@@ -718,6 +741,17 @@ async function submitAvailability() {
   document.getElementById('flash-modal').classList.add('show');
 }
 
+function saveAvailability(data){
+  fetch('/api/availability', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  })
+  .then(response => response.json())
+  .then(result => {
+    console.log(result, JSON.stringify(data));
+  })
+}
 // ════════════════════════════════════════
 // ROSTER ACTIONS
 // ════════════════════════════════════════
