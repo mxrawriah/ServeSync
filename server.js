@@ -92,13 +92,13 @@ async function getAccessibleContactIds(userRow) {
       .from('roster')
       .select('member_id')
       .eq('leader_id', userRow.id);
-    
+
     const { data: leaderRows } = await supabase
       .from('users')
       .select('id')
       .eq('role', 'leader')
       .neq('id', userRow.id);
-    
+
     const memberIds = (memberRows || []).map(r => r.member_id).filter(Boolean);
     const leaderIds = (leaderRows || []).map(r => r.id);
     return Array.from(new Set([...memberIds, ...leaderIds]));
@@ -108,7 +108,7 @@ async function getAccessibleContactIds(userRow) {
     .from('roster')
     .select('leader_id')
     .eq('member_id', userRow.id);
-  
+
   const leaderIds = (leaderRows || []).map(r => r.leader_id).filter(Boolean);
   if (!leaderIds.length) return [];
 
@@ -139,7 +139,7 @@ async function ensureConversation(userIdA, userIdB) {
   const b = Math.max(Number(userIdA), Number(userIdB));
   const existing = await getConversationByParticipants(a, b);
   if (existing) return existing;
-  
+
   const { data } = await supabase
     .from('conversations')
     .insert([{ participant_a_id: a, participant_b_id: b }])
@@ -180,7 +180,7 @@ async function getMessageThread(userRow, conversationId) {
     .eq('id', conversationId)
     .or(`participant_a_id.eq.${userRow.id},participant_b_id.eq.${userRow.id}`)
     .single();
-  
+
   if (!conversation) return null;
 
   const otherUserId = conversation.participant_a_id === userRow.id ? conversation.participant_b_id : conversation.participant_a_id;
@@ -189,7 +189,7 @@ async function getMessageThread(userRow, conversationId) {
     .select('id, first_name, last_name, handle, email, role')
     .eq('id', otherUserId)
     .single();
-  
+
   if (!otherUser) return null;
 
   const { data: rows } = await supabase
@@ -240,13 +240,13 @@ async function getMessageSummaries(userRow) {
 
   for (const conversation of conversations || []) {
     const otherUserId = conversation.participant_a_id === userRow.id ? conversation.participant_b_id : conversation.participant_a_id;
-    
+
     const { data: otherUser } = await supabase
       .from('users')
       .select('id, first_name, last_name, handle, email, role')
       .eq('id', otherUserId)
       .single();
-    
+
     if (!otherUser) continue;
 
     const { data: messages } = await supabase
@@ -378,11 +378,11 @@ async function respondWithUserData(userRow, res) {
 
 // Passport configuration
 passport.use(new GoogleStrategy({
-    clientID: process.env.GOOGLE_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: "http://localhost:3000/auth/google/callback"
-  },
-  async function(accessToken, refreshToken, profile, done) {
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: "http://localhost:3000/auth/google/callback"
+},
+  async function (accessToken, refreshToken, profile, done) {
     const email = profile.emails[0].value;
     const firstName = profile.name.givenName;
     const lastName = profile.name.familyName;
@@ -423,11 +423,11 @@ passport.use(new GoogleStrategy({
   }
 ));
 
-passport.serializeUser(function(user, done) {
+passport.serializeUser(function (user, done) {
   done(null, user.id);
 });
 
-passport.deserializeUser(async function(id, done) {
+passport.deserializeUser(async function (id, done) {
   const { data: user } = await supabase
     .from('users')
     .select('*')
@@ -441,9 +441,9 @@ passport.deserializeUser(async function(id, done) {
 app.get('/auth/google',
   passport.authenticate('google', { scope: ['profile', 'email'] }));
 
-app.get('/auth/google/callback', 
+app.get('/auth/google/callback',
   passport.authenticate('google', { failureRedirect: '/login' }),
-  function(req, res) {
+  function (req, res) {
     res.redirect('/');
   });
 
@@ -482,7 +482,7 @@ app.post('/api/signup', async (req, res) => {
     }
     const handle = `@${firstName.toLowerCase()}`;
 
-    const { data: newUser } = await supabase
+    const { data: newUser, error: insertError } = await supabase
       .from('users')
       .insert([{
         email,
@@ -494,6 +494,11 @@ app.post('/api/signup', async (req, res) => {
       }])
       .select()
       .single();
+
+    if (insertError || !newUser) {
+      console.error('Signup insert error:', insertError);
+      return res.status(500).json({ error: 'Failed to create user. ' + (insertError?.message || '') });
+    }
 
     const user = {
       id: newUser.id,
@@ -701,7 +706,7 @@ app.get('/api/messages/conversations/:conversationId', async (req, res) => {
   try {
     const payload = await getMessageThread(req.user, conversationId);
     if (!payload) return res.status(404).json({ error: 'Conversation not found' });
-    
+
     await supabase
       .from('messages')
       .update({ is_read: 1 })
@@ -757,7 +762,7 @@ app.post('/api/messages', async (req, res) => {
 
     const conversation = await ensureConversation(senderId, resolvedReceiverId);
     const finalSubject = String(subject || '').trim() || '(no subject)';
-    
+
     const { data: message } = await supabase
       .from('messages')
       .insert([{
@@ -818,7 +823,7 @@ app.post('/api/messages/conversations/:conversationId/reply', async (req, res) =
     }
 
     const receiverId = conversation.participant_a_id === req.user.id ? conversation.participant_b_id : conversation.participant_a_id;
-    
+
     const { data: reply } = await supabase
       .from('messages')
       .insert([{
@@ -1098,7 +1103,7 @@ function assignmentRoleKey(date, serviceTime, role) {
 
 async function findMemberSlotConflict(memberId, date, serviceTime) {
   const normalizedTime = normalizeServiceTime(serviceTime);
-  
+
   const { data: rosterConflict } = await supabase
     .from('roster')
     .select('id, member_id, member_name, date, service_time, role')
