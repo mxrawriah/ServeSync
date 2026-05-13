@@ -182,7 +182,7 @@
       <div class="grid-2">
         <div class="card">
           <div class="card-title">Upcoming Assignments</div>
-          <table class="tbl"><thead><tr><th>Date</th><th>Role</th><th>Status</th></tr></thead><tbody id="member-sched-body"></tbody></table>
+          <table class="tbl"><thead><tr><th>Date</th><th>Time</th><th>Role</th><th>Status</th></tr></thead><tbody id="member-sched-body"></tbody></table>
         </div>
         <div class="card">
           <div class="card-hrow">
@@ -192,6 +192,9 @@
           <div class="add-form" id="add-avail-form">
             <div class="add-form-row">
               <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">DATE</label><input type="date" id="avail-date"/></div>
+              <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">TIME</label><input type="time" id="avail-time" value="09:00"/></div>
+            </div>
+            <div class="add-form-row">
               <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">ROLE</label>
                 <select id="avail-role"><option>Usher</option><option>Multimedia</option><option>Worship Team</option><option>Creatives</option><option>Social Media</option><option>Production</option><option>Service Lead</option><option>Preacher</option><option>Performing Arts</option><option>Design Team</option><option>Maintenance and Repair</option><option>Housekeeping</option></select>
               </div>
@@ -201,7 +204,7 @@
               <div style="display:flex;align-items:flex-end"><button class="btn-primary-sm" onclick="addAvailRow()" style="width:100%">Add</button></div>
             </div>
           </div>
-          <table class="tbl"><thead><tr><th>Date</th><th>Role</th><th>Available</th><th></th></tr></thead><tbody id="avail-table-body"></tbody></table>
+          <table class="tbl"><thead><tr><th>Date</th><th>Time</th><th>Role</th><th>Available</th><th>Review</th><th></th></tr></thead><tbody id="avail-table-body"></tbody></table>
           <div style="display:flex;justify-content:flex-end;margin-top:14px">
             <button class="btn-primary-sm" onclick="submitAvailability()">Submit Availability</button>
           </div>
@@ -217,6 +220,7 @@
         <button class="inbox-filter-btn" id="mf-unread" onclick="setMsgFilter('unread','member')">Unread</button>
         <button class="inbox-filter-btn" id="mf-sent" onclick="setMsgFilter('sent','member')">Sent</button>
       </div>
+      <div style="margin:12px 0 14px"><input type="search" class="finput" id="member-inbox-search" placeholder="Search conversations by sender, subject, or preview" oninput="renderInbox('member')"/></div>
       <div class="inbox-list" id="member-inbox-list"></div>
       <button class="compose-btn" onclick="openCompose()" title="Compose">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -337,20 +341,25 @@
         <div class="card">
           <div class="card-hrow">
             <div class="card-title" style="color:var(--blue)">Create Assignment</div>
-            <button class="btn-sm btn-blue" onclick="toggleAssignForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Assignment</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+              <button class="btn-sm btn-orange" onclick="generateSchedule()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Generate Schedule</button>
+              <button class="btn-sm btn-blue" onclick="toggleAssignForm()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Assignment</button>
+            </div>
           </div>
           <div class="add-form" id="assign-form" style="background:var(--blue-bg)">
             <div class="add-form-row">
               <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">DATE</label><input type="date" id="assign-date"/></div>
-              <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">MEMBER</label><select id="assign-member"><option value="">Select member...</option></select></div>
+              <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">TIME</label><input type="time" id="assign-time" value="09:00"/></div>
             </div>
             <div class="add-form-row">
+              <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">MEMBER</label><select id="assign-member"><option value="">Select member...</option></select></div>
               <div><label style="font-size:11px;color:var(--gray-500);font-weight:700;display:block;margin-bottom:3px">ROLE</label>
                 <select id="assign-role"><option>Usher</option><option>Multimedia</option><option>Worship Team</option><option>Creatives</option><option>Social Media</option><option>Production</option><option>Service Lead</option><option>Preacher</option><option>Performing Arts</option><option>Design Team</option><option>Maintenance and Repair</option><option>Housekeeping</option></select>
               </div>
-              <div style="display:flex;align-items:flex-end"><button class="btn-primary-sm" onclick="addRosterItem()" style="width:100%;background:#1565C0">Assign</button></div>
             </div>
+            <div style="display:flex;justify-content:flex-end"><button class="btn-primary-sm" onclick="addRosterItem()" style="background:#E8531D">Assign</button></div>
           </div>
+          <div class="schedule-summary" id="schedule-summary"></div>
           <div id="roster-list"></div>
         </div>
         <div class="card">
@@ -396,6 +405,7 @@
         <button class="inbox-filter-btn" id="lf-unread" onclick="setMsgFilter('unread','leader')">Unread</button>
         <button class="inbox-filter-btn" id="lf-sent" onclick="setMsgFilter('sent','leader')">Sent</button>
       </div>
+      <div style="margin:12px 0 14px"><input type="search" class="finput" id="leader-inbox-search" placeholder="Search conversations by sender, subject, or preview" oninput="renderInbox('leader')"/></div>
       <div class="inbox-list" id="leader-inbox-list"></div>
       <button class="compose-btn" onclick="openCompose()" title="Compose" style="background:#1565C0">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -489,7 +499,12 @@
 <div class="modal-backdrop" id="compose-modal">
   <div class="modal-box" style="max-width:480px">
     <div style="font-family:'Montserrat',sans-serif;font-size:17px;font-weight:800;color:var(--gray-900);margin-bottom:16px">New Message</div>
-    <div class="compose-field"><label class="compose-label">To</label><input type="text" class="finput" id="compose-to" placeholder="Recipient name or @handle"/></div>
+    <div class="compose-field">
+      <label class="compose-label">To</label>
+      <input type="text" class="finput" id="compose-to" placeholder="Search by username or email" oninput="searchRecipients()" autocomplete="off"/>
+      <input type="hidden" id="compose-recipient-id"/>
+      <div id="compose-recipient-results" style="margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto"></div>
+    </div>
     <div class="compose-field"><label class="compose-label">Subject</label><input type="text" class="finput" id="compose-subject" placeholder="Message subject"/></div>
     <div class="compose-field"><label class="compose-label">Message</label><textarea class="bio-textarea" id="compose-body" placeholder="Write your message..." style="min-height:100px"></textarea></div>
     <div class="modal-actions"><button class="btn-modal-cancel" onclick="document.getElementById('compose-modal').classList.remove('show')">Cancel</button><button class="btn-primary" style="flex:2;border-radius:10px;padding:12px" onclick="sendComposedMessage()">Send Message</button></div>

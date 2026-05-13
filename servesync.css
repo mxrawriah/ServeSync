@@ -221,6 +221,13 @@ th.sortable.active{color:var(--accent)}
 .add-form-actions{display:flex;gap:8px;justify-content:flex-end}
 .avail-select{border:1px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:12px;font-family:'Open Sans',sans-serif;background:#fff;outline:none}
 
+.review-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.schedule-summary{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.schedule-slot{border:1px solid var(--orange-light);background:var(--orange-bg);border-radius:10px;padding:12px}
+.schedule-slot-head{font-family:'Montserrat',sans-serif;font-size:12px;font-weight:900;color:var(--orange);margin-bottom:8px}
+.schedule-slot-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;border-top:1px solid rgba(232,83,29,.18);font-size:13px;color:var(--gray-900)}
+.schedule-slot-row:first-of-type{border-top:none}
+
 /* ═══ INBOX ═══ */
 .inbox-filters{display:flex;gap:6px;margin-bottom:16px}
 .inbox-filter-btn{padding:5px 14px;border-radius:20px;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid var(--gray-200);background:#fff;color:var(--gray-500);transition:all var(--tr)}

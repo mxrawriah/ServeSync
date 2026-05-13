@@ -22,6 +22,9 @@ let editNameCb = null;
 let allUsers = [];
 let userSortKey = 'id';
 let userSortDirection = 'asc';
+let realtimeTimer = null;
+let composeSearchTimer = null;
+let composeRecipient = null;
 
 const ROLES_LIST = ['Usher','Multimedia','Worship Team','Creatives','Social Media','Production','Service Lead','Preacher','Performing Arts','Design Team','Maintenance and Repair','Housekeeping'];
 
@@ -145,12 +148,33 @@ function checkPw(pw) {
 
 function normalizeUserState(user) {
   user.schedule = user.schedule || [];
-  user.availability = user.availability || [];
+  user.schedule = user.schedule.map(item => ({...item, serviceTime: item.serviceTime || item.service_time || '09:00'}));
+  user.availability = (user.availability || []).map(item => ({
+    ...item,
+    serviceTime: item.serviceTime || item.service_time || '09:00',
+    reviewStatus: item.reviewStatus || item.review_status || 'pending'
+  }));
   user.availabilityDraft = user.availabilityDraft || [];
-  user.messages = user.messages || [];
+  user.messages = (user.messages || []).map(item => ({
+    ...item,
+    thread: item.thread || [],
+    preview: item.preview || '',
+    unreadCount: item.unreadCount || (item.unread ? 1 : 0),
+    conversationId: item.conversationId || item.id
+  }));
   user.notifications = user.notifications || [];
-  user.sent = user.sent || [];
+  user.sent = (user.sent || []).map(item => ({
+    ...item,
+    thread: item.thread || [],
+    preview: item.preview || '',
+    unreadCount: item.unreadCount || (item.unread ? 1 : 0),
+    conversationId: item.conversationId || item.id
+  }));
+  user.messageUnreadCount = user.messageUnreadCount || user.messages.reduce((total, item) => total + (item.unreadCount || (item.unread ? 1 : 0)), 0);
   if (user.role === 'leader') user.roster = user.roster || [];
+  if (user.role === 'leader') {
+    user.roster = user.roster.map(item => ({...item, serviceTime: item.serviceTime || item.service_time || '09:00'}));
+  }
   return user;
 }
 
@@ -276,17 +300,7 @@ function enterApp(role) {
 
   // If leader, fetch members data
   if (role === 'leader') {
-    fetch('/api/members')
-      .then(response => response.json())
-      .then(result => {
-        data.members = result.members || [];
-        continueEnterApp(role);
-      })
-      .catch(error => {
-        console.error('Error fetching members:', error);
-        data.members = [];
-        continueEnterApp(role);
-      });
+    refreshLeaderData().finally(() => continueEnterApp(role));
   } else {
     continueEnterApp(role);
   }
@@ -310,6 +324,7 @@ function continueEnterApp(role) {
   goTo(role === 'leader' ? 'leader-dashboard' : 'dashboard');
 
   updateBadges();
+  startRealtimeSync();
 }
 
 function buildSidebarNav(role) {
@@ -388,21 +403,22 @@ function renderMemberDash() {
   document.getElementById('dash-greeting').textContent = `${h<12?'Good morning':h<17?'Good afternoon':'Good evening'}, ${name}! 👋`;
   document.getElementById('dash-date').textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
   document.getElementById('stat-upcoming').textContent = data.member.schedule.length;
-  document.getElementById('stat-messages').textContent = data.member.messages.filter(m=>m.unread).length;
+  document.getElementById('stat-messages').textContent = data.member.messageUnreadCount || data.member.messages.reduce((total, m) => total + (m.unreadCount || (m.unread ? 1 : 0)), 0);
 
   const sb = document.getElementById('dash-sched-body');
   sb.innerHTML = data.member.schedule.length
-    ? data.member.schedule.map(s=>`<tr><td>${s.date}</td><td><span class="role-badge">${s.role}</span></td><td><span class="chip ${s.status}">${s.status==='confirmed'?'✓ Confirmed':'⏳ Pending'}</span></td></tr>`).join('')
-    : '<tr><td colspan="3" style="text-align:center;color:var(--gray-400);padding:18px;font-size:13px">No upcoming schedule</td></tr>';
+    ? data.member.schedule.map(s=>`<tr><td>${displayDate(s.date)}</td><td>${displayTime(s.serviceTime)}</td><td><span class="role-badge">${s.role}</span></td><td><span class="chip ${s.status}">${s.status==='confirmed'?'✓ Confirmed':'⏳ Pending'}</span></td></tr>`).join('')
+    : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:18px;font-size:13px">No upcoming schedule</td></tr>';
 
   const ip = document.getElementById('dash-inbox-preview');
   const msgs = data.member.messages.slice(0,3);
   ip.innerHTML = msgs.length ? msgs.map(m=>{
     const init = m.from.split(' ').map(w=>w[0]).slice(0,2).join('');
-    return `<div class="inbox-row ${m.unread?'unread':''}" onclick="openMessage(${m.id},'member')" style="padding:10px 0;margin:0">
+    const unread = (m.unreadCount || 0) > 0 || m.unread;
+    return `<div class="inbox-row ${unread?'unread':''}" onclick="openMessage(${m.conversationId || m.id},'member')" style="padding:10px 0;margin:0">
       <div class="inbox-avatar" style="width:36px;height:36px;font-size:13px">${init}</div>
-      <div class="inbox-content"><div class="inbox-top"><span class="inbox-from">${m.from}</span><span class="inbox-time">${m.time}</span></div><div class="inbox-subject">${m.subject}</div></div>
-      ${m.unread?'<div class="unread-dot"></div>':''}
+      <div class="inbox-content"><div class="inbox-top"><span class="inbox-from">${m.from}</span><span class="inbox-time">${m.time}</span></div><div class="inbox-subject">${m.subject}</div><div class="inbox-preview">${m.preview || ''}</div></div>
+      ${unread?'<div class="unread-dot"></div>':''}
     </div>`;
   }).join('') : '<div class="empty" style="padding:20px 0"><p>No messages yet</p></div>';
 }
@@ -410,8 +426,8 @@ function renderMemberDash() {
 function renderMemberSchedule() {
   const sb = document.getElementById('member-sched-body');
   sb.innerHTML = data.member.schedule.length
-    ? data.member.schedule.map(s=>`<tr><td>${s.date}</td><td><span class="role-badge">${s.role}</span></td><td><span class="chip ${s.status}">${s.status==='confirmed'?'✓ Confirmed':'⏳ Pending'}</span></td></tr>`).join('')
-    : '<tr><td colspan="3" style="text-align:center;color:var(--gray-400);padding:18px;font-size:13px">No upcoming schedule</td></tr>';
+    ? data.member.schedule.map(s=>`<tr><td>${displayDate(s.date)}</td><td>${displayTime(s.serviceTime)}</td><td><span class="role-badge">${s.role}</span></td><td><span class="chip ${s.status}">${s.status==='confirmed'?'✓ Confirmed':'⏳ Pending'}</span></td></tr>`).join('')
+    : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:18px;font-size:13px">No upcoming schedule</td></tr>';
   const ab = document.getElementById('avail-table-body');
   const availabilityDraft = data.member.availabilityDraft || [];
   ab.innerHTML = availabilityDraft.length
@@ -422,6 +438,28 @@ function renderMemberSchedule() {
         <td><button onclick="rmAvail(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px">✕</button></td>
       </tr>`).join('')
     : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:14px;font-size:12px">No availability added yet</td></tr>';
+}
+
+function renderMemberSchedule() {
+  const sb = document.getElementById('member-sched-body');
+  sb.innerHTML = data.member.schedule.length
+    ? data.member.schedule.map(s=>`<tr><td>${displayDate(s.date)}</td><td>${displayTime(s.serviceTime)}</td><td><span class="role-badge">${s.role}</span></td><td><span class="chip ${s.status}">${s.status==='confirmed'?'✓ Confirmed':'⏳ Pending'}</span></td></tr>`).join('')
+    : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:18px;font-size:13px">No upcoming schedule</td></tr>';
+
+  const ab = document.getElementById('avail-table-body');
+  const savedAvailability = (data.member.availability || []).map(a => ({...a, saved: true}));
+  const availabilityDraft = (data.member.availabilityDraft || []).map(a => ({...a, saved: false}));
+  const availabilityRows = [...savedAvailability, ...availabilityDraft];
+  ab.innerHTML = availabilityRows.length
+    ? availabilityRows.map((a,i)=>`<tr>
+        <td>${displayDate(a.date)}</td>
+        <td>${displayTime(a.serviceTime)}</td>
+        <td><span class="role-badge">${a.role}</span></td>
+        <td><span class="chip ${a.status==='yes'?'yes':'no'}">${a.status==='yes'?'Available':'Unavailable'}</span></td>
+        <td><span class="chip ${reviewChipClass(a.reviewStatus)}">${reviewLabel(a.reviewStatus)}</span></td>
+        <td>${a.saved ? '' : `<button onclick="rmAvail(${i - savedAvailability.length})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px">x</button>`}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:14px;font-size:12px">No availability added yet</td></tr>';
 }
 
 function renderLeaderDash() {
@@ -448,10 +486,52 @@ function renderLeaderDash() {
   const msgs = data.leader.messages.slice(0,3);
   ldi.innerHTML = msgs.length ? msgs.map(m=>{
     const init = m.from.split(' ').map(w=>w[0]).slice(0,2).join('');
-    return `<div class="inbox-row ${m.unread?'unread':''}" onclick="openMessage(${m.id},'leader')" style="padding:10px 0;margin:0">
+    const unread = (m.unreadCount || 0) > 0 || m.unread;
+    return `<div class="inbox-row ${unread?'unread':''}" onclick="openMessage(${m.conversationId || m.id},'leader')" style="padding:10px 0;margin:0">
       <div class="inbox-avatar" style="width:36px;height:36px;font-size:13px;background:linear-gradient(135deg,#1565C0,#0D47A1)">${init}</div>
-      <div class="inbox-content"><div class="inbox-top"><span class="inbox-from">${m.from}</span><span class="inbox-time">${m.time}</span></div><div class="inbox-subject">${m.subject}</div></div>
-      ${m.unread?'<div class="unread-dot" style="background:#1565C0"></div>':''}
+      <div class="inbox-content"><div class="inbox-top"><span class="inbox-from">${m.from}</span><span class="inbox-time">${m.time}</span></div><div class="inbox-subject">${m.subject}</div><div class="inbox-preview">${m.preview || ''}</div></div>
+      ${unread?'<div class="unread-dot" style="background:#1565C0"></div>':''}
+    </div>`;
+  }).join('') : '<div class="empty" style="padding:20px 0"><p>No messages</p></div>';
+}
+
+function renderLeaderDash() {
+  const h = new Date().getHours();
+  const name = data.leader.name.split(' ')[0];
+  document.getElementById('leader-greeting').textContent = `${h<12?'Good morning':h<17?'Good afternoon':'Good evening'}, ${name}!`;
+  document.getElementById('leader-date').textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  document.getElementById('stat-members').textContent = (data.members || []).length;
+  document.getElementById('stat-roster').textContent = (data.leader && data.leader.roster ? data.leader.roster.length : 0);
+
+  const allAvails = (data.members || []).flatMap(m=>(m.availability || []).map(a=>({...a,memberId:m.id,memberName:m.name})));
+  document.getElementById('stat-responses').textContent = allAvails.length;
+  const ar = document.getElementById('leader-avail-resp');
+  if (!allAvails.length) {
+    ar.innerHTML='<div class="empty" style="padding:20px 0"><p>No responses yet</p></div>';
+  } else {
+    ar.innerHTML = allAvails.map(a=>{
+      const init = a.memberName.split(' ').map(w=>w[0]).slice(0,2).join('');
+      const actions = a.id && a.reviewStatus === 'pending'
+        ? `<div class="review-actions"><button class="btn-sm btn-green" onclick="reviewAvailability(${a.id},'approved')">Approve</button><button class="btn-sm btn-red-sm" onclick="reviewAvailability(${a.id},'rejected')">Reject</button></div>`
+        : `<span class="chip ${reviewChipClass(a.reviewStatus)}">${reviewLabel(a.reviewStatus)}</span>`;
+      return `<div class="avail-resp-item">
+        <div class="avail-resp-av">${init}</div>
+        <div class="avail-resp-body"><div class="avail-resp-name">${a.memberName}</div><div class="avail-resp-detail">${displayDate(a.date)} · ${displayTime(a.serviceTime)} · ${a.role}</div></div>
+        <span class="chip ${a.status==='yes'?'yes':'no'}">${a.status==='yes'?'Available':'Unavailable'}</span>
+        ${actions}
+      </div>`;
+    }).join('');
+  }
+
+  const ldi = document.getElementById('leader-dash-inbox');
+  const msgs = data.leader.messages.slice(0,3);
+  ldi.innerHTML = msgs.length ? msgs.map(m=>{
+    const init = m.from.split(' ').map(w=>w[0]).slice(0,2).join('');
+    const unread = (m.unreadCount || 0) > 0 || m.unread;
+    return `<div class="inbox-row ${unread?'unread':''}" onclick="openMessage(${m.conversationId || m.id},'leader')" style="padding:10px 0;margin:0">
+      <div class="inbox-avatar" style="width:36px;height:36px;font-size:13px;background:linear-gradient(135deg,#E8531D,#C94218)">${init}</div>
+      <div class="inbox-content"><div class="inbox-top"><span class="inbox-from">${m.from}</span><span class="inbox-time">${m.time}</span></div><div class="inbox-subject">${m.subject}</div><div class="inbox-preview">${m.preview || ''}</div></div>
+      ${unread?'<div class="unread-dot"></div>':''}
     </div>`;
   }).join('') : '<div class="empty" style="padding:20px 0"><p>No messages</p></div>';
 }
@@ -606,13 +686,71 @@ function renderRoster() {
   }).join('');
 }
 
+function renderRoster() {
+  const sel = document.getElementById('assign-member');
+  const date = document.getElementById('assign-date')?.value;
+  const serviceTime = document.getElementById('assign-time')?.value || '09:00';
+  sel.innerHTML = '<option value="">Select member...</option>' + (data.members || []).map(m=>{
+    const conflict = date ? findLocalMemberSlotConflict(m.id, date, serviceTime) : null;
+    return `<option value="${m.id}" ${conflict?'disabled':''}>${m.name}${conflict ? ` - busy (${conflict.role})` : ''}</option>`;
+  }).join('');
+
+  const summary = document.getElementById('schedule-summary');
+  if (summary) {
+    const grouped = groupRosterBySlot(data.leader.roster || []);
+    summary.innerHTML = grouped.length
+      ? grouped.map(group => `<div class="schedule-slot"><div class="schedule-slot-head">${displayDate(group.date)} · ${displayTime(group.serviceTime)}</div>${group.items.map(item => `<div class="schedule-slot-row"><span class="role-badge">${item.role}</span><span>${item.memberName}</span></div>`).join('')}</div>`).join('')
+      : '<div class="empty" style="padding:12px 0"><p>No published schedule yet.</p></div>';
+  }
+
+  const rl = document.getElementById('roster-list');
+  rl.innerHTML = (data.leader && data.leader.roster && data.leader.roster.length)
+    ? data.leader.roster.map(r=>`
+        <div class="roster-item">
+          <div class="roster-datebox"><div class="roster-month">${displayDate(r.date).split(' ')[0]||''}</div><div class="roster-day">${displayDate(r.date).split(' ')[1]||''}</div></div>
+          <div class="roster-info"><div class="roster-name-t">${r.memberName}</div><div class="roster-role-t">${displayTime(r.serviceTime)} · <span class="role-badge">${r.role}</span></div></div>
+          <button class="btn-sm btn-red-sm" onclick="removeRoster(${r.id})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Remove</button>
+        </div>`).join('')
+    : '<div class="empty" style="padding:20px 0"><p>No assignments yet. Approve availability and generate a schedule.</p></div>';
+
+  const ml = document.getElementById('members-list');
+  ml.innerHTML = (data.members || []).map(m=>{
+    const init = m.name.split(' ').map(w=>w[0]).slice(0,2).join('');
+    const approved = (m.availability || []).filter(a => a.reviewStatus === 'approved').length;
+    return `<div class="member-row">
+      <div class="member-av">${init}</div>
+      <div class="member-info"><div class="member-name-t">${m.name}</div><div class="member-role-t">${m.handle} · ${approved} approved slot${approved===1?'':'s'}</div></div>
+      <span class="chip ${m.availability.length?'confirmed':'pending'}">${m.availability.length?'Responded':'Pending'}</span>
+    </div>`;
+  }).join('');
+}
+
+function getInboxSearchTerm(who) {
+  const input = document.getElementById(who === 'leader' ? 'leader-inbox-search' : 'member-inbox-search');
+  return (input && input.value ? input.value.trim().toLowerCase() : '');
+}
+
+function matchesInboxSearch(item, term) {
+  if (!term) return true;
+  const haystack = [
+    item.from,
+    item.to,
+    item.subject,
+    item.preview,
+    ...(item.thread || []).map(part => part.text || part.sender || '')
+  ].join(' ').toLowerCase();
+  return haystack.includes(term);
+}
+
 function renderInbox(who) {
   const id = who==='leader' ? 'leader-inbox-list' : 'member-inbox-list';
   const el = document.getElementById(id); if(!el) return;
   const state = who==='leader' ? data.leader : data.member;
   const filter = msgFilter[who];
+  const term = getInboxSearchTerm(who);
   let msgs = filter==='sent' ? state.sent : state.messages;
-  if (filter==='unread') msgs = msgs.filter(m=>m.unread);
+  if (filter==='unread') msgs = msgs.filter(m=>m.unread || (m.unreadCount || 0) > 0);
+  msgs = msgs.filter(m => matchesInboxSearch(m, term));
 
   if (!msgs.length) {
     el.innerHTML=`<div class="empty" style="padding:40px 0"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg><p>${filter==='sent'?'No sent messages.':filter==='unread'?'No unread messages.':'Your inbox is empty.'}</p></div>`;
@@ -621,15 +759,16 @@ function renderInbox(who) {
 
   el.innerHTML = msgs.map(m=>{
     const init = m.from.split(' ').map(w=>w[0]).slice(0,2).join('');
-    const preview = m.thread&&m.thread.length ? m.thread[m.thread.length-1].text : '';
-    return `<div class="inbox-row ${m.unread&&filter!=='sent'?'unread':''}" onclick="openMessage(${m.id},'${who}')">
+    const preview = m.preview || (m.thread&&m.thread.length ? m.thread[m.thread.length-1].text : '');
+    const unread = filter!=='sent' && ((m.unreadCount || 0) > 0 || m.unread);
+    return `<div class="inbox-row ${unread?'unread':''}" onclick="openMessage(${m.conversationId || m.id},'${who}')">
       <div class="inbox-avatar" style="${who==='leader'?'background:linear-gradient(135deg,#1565C0,#0D47A1)':''}">${init}</div>
       <div class="inbox-content">
         <div class="inbox-top"><span class="inbox-from">${m.from}</span><span class="inbox-time">${m.time}</span></div>
         <div class="inbox-subject">${m.subject}</div>
-        <div class="inbox-preview">${preview.substring(0,80)}${preview.length>80?'…':''}</div>
+        <div class="inbox-preview">${(preview || '').substring(0,80)}${(preview || '').length>80?'…':''}</div>
       </div>
-      ${m.unread&&filter!=='sent'?'<div class="unread-dot"></div>':''}
+      ${unread?'<div class="unread-dot"></div>':''}
     </div>`;
   }).join('');
 }
@@ -648,6 +787,7 @@ function renderNotifs(who) {
   const icons = {
     schedule:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+    message:'<path d="M4 4h16c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H8l-4 4v-4H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>',
     bell:'<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>'
   };
   if (!notifs.length) { el.innerHTML='<div class="empty" style="padding:30px 0"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><p>All caught up!</p></div>'; return; }
@@ -690,16 +830,18 @@ function toggleAddForm() {
   if (f.classList.contains('show')) {
     const d = new Date(); d.setDate(d.getDate()+1);
     document.getElementById('avail-date').value = d.toISOString().split('T')[0];
+    document.getElementById('avail-time').value = '09:00';
   }
 }
 
 function addAvailRow() {
   const date = document.getElementById('avail-date').value;
+  const serviceTime = document.getElementById('avail-time').value || '09:00';
   const role = document.getElementById('avail-role').value;
   const status = document.getElementById('avail-status').value;
   if (!date) { showToast('Please select a date.','error'); return; }
   data.member.availabilityDraft = data.member.availabilityDraft || [];
-  data.member.availabilityDraft.push({date,role,status});
+  data.member.availabilityDraft.push({date,serviceTime,role,status,reviewStatus:'pending'});
   renderMemberSchedule();
   document.getElementById('add-avail-form').classList.remove('show');
   showToast('Added to availability.','success');
@@ -714,7 +856,7 @@ function rmAvail(i) {
 function mergeAvailabilityEntries(existing, incoming) {
   const merged = [...existing];
   incoming.forEach(entry => {
-    const existingIndex = merged.findIndex(item => item.date === entry.date && item.role === entry.role);
+    const existingIndex = merged.findIndex(item => item.date === entry.date && (item.serviceTime || '09:00') === (entry.serviceTime || '09:00') && item.role === entry.role);
     if (existingIndex >= 0) merged[existingIndex] = entry;
     else merged.push(entry);
   });
@@ -729,10 +871,6 @@ async function submitAvailability() {
   const previousAvailabilityDraft = [...availabilityDraft];
   const memberRecord = (data.members || []).find(m => m.id === data.member.id || m.handle === data.member.handle || m.name === data.member.name);
   const previousMemberAvailability = memberRecord ? [...(memberRecord.availability || [])] : null;
-  availabilityDraft.filter(a=>a.status==='yes').forEach(a=>{
-    if (!data.member.schedule.find(s=>s.date===fmtDate(a.date)&&s.role===a.role))
-      data.member.schedule.push({date:fmtDate(a.date),role:a.role,status:'pending'});
-  });
   data.leader.notifications.unshift({id:Date.now(),type:'calendar',title:'Availability submitted',sub:data.member.name+' submitted new availability',time:'Just now',unread:true});
   data.member.availability = mergeAvailabilityEntries(data.member.availability || [], previousAvailabilityDraft);
   data.member.availabilityDraft = [];
@@ -785,16 +923,53 @@ function toggleAssignForm() {
   if (f.classList.contains('show')) {
     const d = new Date(); d.setDate(d.getDate()+1);
     document.getElementById('assign-date').value = d.toISOString().split('T')[0];
+    document.getElementById('assign-time').value = '09:00';
+    document.getElementById('assign-date').onchange = renderRoster;
+    document.getElementById('assign-time').onchange = renderRoster;
+    renderRoster();
   }
+}
+
+function normalizeRosterTime(serviceTime) {
+  return serviceTime || '09:00';
+}
+
+function findLocalMemberSlotConflict(memberId, date, serviceTime) {
+  const normalizedTime = normalizeRosterTime(serviceTime);
+  return (data.leader.roster || []).find(item =>
+    Number(item.memberId) === Number(memberId) &&
+    item.date === date &&
+    normalizeRosterTime(item.serviceTime) === normalizedTime
+  );
+}
+
+function findLocalRoleSlotConflict(date, serviceTime, role) {
+  const normalizedTime = normalizeRosterTime(serviceTime);
+  return (data.leader.roster || []).find(item =>
+    item.date === date &&
+    normalizeRosterTime(item.serviceTime) === normalizedTime &&
+    item.role === role
+  );
 }
 
 async function addRosterItem() {
   const date = document.getElementById('assign-date').value;
+  const serviceTime = document.getElementById('assign-time').value || '09:00';
   const memberId = parseInt(document.getElementById('assign-member').value);
   const role = document.getElementById('assign-role').value;
   if (!date||!memberId) { showToast('Please select a date and member.','error'); return; }
   const member = data.members.find(m=>m.id===memberId);
   if (!member) return;
+  const memberConflict = findLocalMemberSlotConflict(memberId, date, serviceTime);
+  if (memberConflict) {
+    showToast(`${member.name} is already assigned to ${memberConflict.role} at this service time.`, 'error');
+    return;
+  }
+  const roleConflict = findLocalRoleSlotConflict(date, serviceTime, role);
+  if (roleConflict) {
+    showToast(`${role} is already assigned to ${roleConflict.memberName} at this service time.`, 'error');
+    return;
+  }
 
   try {
     const response = await fetch('/api/roster', {
@@ -804,7 +979,8 @@ async function addRosterItem() {
         leaderId: data.leader.id,
         memberId,
         memberName: member.name,
-        date: fmtDate(date),
+        date,
+        serviceTime,
         role
       })
     });
@@ -815,7 +991,7 @@ async function addRosterItem() {
     persistCurrentUser();
   } catch (error) {
     console.error('Error saving roster assignment:', error);
-    showToast('Could not save assignment. Please try again.','error');
+    showToast(error.message || 'Could not save assignment. Please try again.','error');
     return;
   }
 
@@ -823,7 +999,7 @@ async function addRosterItem() {
   renderRoster();
   document.getElementById('stat-roster').textContent = data.leader.roster.length;
   updateBadges();
-  showToast(`${member.name.split(' ')[0]} assigned as ${role} on ${fmtDate(date)}!`,'success');
+  showToast(`${member.name.split(' ')[0]} assigned as ${role} on ${displayDate(date)} at ${displayTime(serviceTime)}!`,'success');
 }
 
 async function removeRoster(id) {
@@ -847,19 +1023,108 @@ async function removeRoster(id) {
 // ════════════════════════════════════════
 // MESSAGES
 // ════════════════════════════════════════
-function openMessage(id, who) {
+async function reviewAvailability(id, reviewStatus) {
+  try {
+    const response = await fetch(`/api/availability/${id}/review`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewStatus })
+    });
+    const result = await response.json();
+    if (!response.ok || result.error) throw new Error(result.error || 'Unable to review availability.');
+
+    (data.members || []).forEach(member => {
+      (member.availability || []).forEach(item => {
+        if (item.id === id) item.reviewStatus = reviewStatus;
+      });
+    });
+    renderLeaderDash();
+    showToast(`Availability ${reviewStatus}.`, 'success');
+  } catch (error) {
+    console.error('Review availability error:', error);
+    showToast('Could not update availability review.', 'error');
+  }
+}
+
+async function generateSchedule() {
+  try {
+    const response = await fetch('/api/schedule/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leaderId: data.leader.id })
+    });
+    const result = await response.json();
+    if (!response.ok || result.error) throw new Error(result.error || 'Unable to generate schedule.');
+
+    data.leader.roster = [...(data.leader.roster || []), ...(result.roster || [])];
+    await refreshLeaderData();
+    renderRoster();
+    renderLeaderDash();
+    updateBadges();
+    showToast(result.message || 'Schedule generated.', 'success');
+  } catch (error) {
+    console.error('Generate schedule error:', error);
+    showToast(error.message || 'Could not generate schedule.', 'error');
+  }
+}
+
+function normalizeConversationItem(item) {
+  return {
+    ...item,
+    id: item.conversationId || item.id,
+    conversationId: item.conversationId || item.id,
+    thread: item.thread || [],
+    preview: item.preview || '',
+    unreadCount: item.unreadCount || (item.unread ? 1 : 0)
+  };
+}
+
+function applyMessagePayload(role, payload) {
+  if (!payload) return;
+  const state = role === 'leader' ? data.leader : data.member;
+  if (!state) return;
+  if (payload.messages) state.messages = payload.messages.map(normalizeConversationItem);
+  if (payload.sent) state.sent = payload.sent.map(normalizeConversationItem);
+  if (typeof payload.unreadCount === 'number') state.messageUnreadCount = payload.unreadCount;
+}
+
+function findConversationRecord(who, id) {
   const state = who==='leader' ? data.leader : data.member;
-  const msg = state.messages.find(m=>m.id===id) || state.sent.find(m=>m.id===id);
+  return state.messages.find(m=>Number(m.conversationId || m.id) === Number(id)) || state.sent.find(m=>Number(m.conversationId || m.id) === Number(id));
+}
+
+async function openMessage(id, who) {
+  const state = who==='leader' ? data.leader : data.member;
+  let msg = findConversationRecord(who, id);
   if (!msg) return;
-  msg.unread = false;
-  currentMsgId = {id, who};
+  currentMsgId = {id: Number(msg.conversationId || msg.id), who};
+
+  try {
+    const response = await fetch(`/api/messages/conversations/${currentMsgId.id}`);
+    const result = await response.json();
+    if (response.ok && result.conversation) {
+      msg = normalizeConversationItem({
+        ...msg,
+        ...result.conversation,
+        thread: result.conversation.thread || []
+      });
+      const idx = state.messages.findIndex(m=>Number(m.conversationId || m.id) === Number(currentMsgId.id));
+      if (idx >= 0) state.messages[idx] = msg;
+      const sentIdx = state.sent.findIndex(m=>Number(m.conversationId || m.id) === Number(currentMsgId.id));
+      if (sentIdx >= 0) state.sent[sentIdx] = msg;
+      msg.unread = false;
+      msg.unreadCount = 0;
+    }
+  } catch (error) {
+    console.error('Load message thread error:', error);
+  }
 
   document.getElementById('msg-subject').textContent = msg.subject;
   const init = msg.from.split(' ').map(w=>w[0]).slice(0,2).join('');
   document.getElementById('msg-avatar').textContent = init;
   document.getElementById('msg-avatar').style.background = who==='leader'?'linear-gradient(135deg,#1565C0,#0D47A1)':'linear-gradient(135deg,#E8531D,#C94218)';
   document.getElementById('msg-from').textContent = msg.from;
-  document.getElementById('msg-to').textContent = 'To: '+(who==='leader'?data.leader.name:data.member.name);
+  document.getElementById('msg-to').textContent = 'To: '+(msg.to || (who==='leader'?data.leader.name:data.member.name));
   document.getElementById('msg-time').textContent = msg.time;
 
   renderThread(msg);
@@ -932,6 +1197,170 @@ function sendComposedMessage() {
 // ════════════════════════════════════════
 // NOTIFICATIONS
 // ════════════════════════════════════════
+function normalizeConversationItem(item) {
+  return {
+    ...item,
+    id: item.conversationId || item.id,
+    conversationId: item.conversationId || item.id,
+    thread: item.thread || [],
+    preview: item.preview || '',
+    unreadCount: item.unreadCount || (item.unread ? 1 : 0)
+  };
+}
+
+function applyMessagePayload(role, payload) {
+  if (!payload) return;
+  const state = role === 'leader' ? data.leader : data.member;
+  if (!state) return;
+  if (payload.messages) state.messages = payload.messages.map(normalizeConversationItem);
+  if (payload.sent) state.sent = payload.sent.map(normalizeConversationItem);
+  if (typeof payload.unreadCount === 'number') state.messageUnreadCount = payload.unreadCount;
+}
+
+function findConversationRecord(who, id) {
+  const state = who==='leader' ? data.leader : data.member;
+  return state.messages.find(m=>Number(m.conversationId || m.id) === Number(id)) || state.sent.find(m=>Number(m.conversationId || m.id) === Number(id));
+}
+
+function renderRecipientResults(results) {
+  const container = document.getElementById('compose-recipient-results');
+  if (!container) return;
+  if (!results.length) {
+    container.innerHTML = '<div style="font-size:12px;color:var(--gray-400);padding:6px 2px">No matching recipients</div>';
+    return;
+  }
+  container.innerHTML = results.map(contact => `
+    <button type="button" class="btn-outline-sm" style="display:flex;justify-content:space-between;width:100%;padding:10px 12px;border-radius:8px" onclick="selectComposeRecipient(${contact.id}, '${contact.name.replace(/'/g, "\\'")}', '${(contact.handle || '').replace(/'/g, "\\'")}', '${(contact.email || '').replace(/'/g, "\\'")}')">
+      <span>${contact.name}</span>
+      <span style="color:var(--gray-500);font-size:12px">${contact.handle || contact.email}</span>
+    </button>
+  `).join('');
+}
+
+function selectComposeRecipient(id, name, handle, email) {
+  composeRecipient = { id, name, handle, email };
+  document.getElementById('compose-recipient-id').value = id;
+  document.getElementById('compose-to').value = name;
+  renderRecipientResults([{ id, name, handle, email }]);
+}
+
+function searchRecipients() {
+  const query = document.getElementById('compose-to').value.trim();
+  clearTimeout(composeSearchTimer);
+  composeSearchTimer = setTimeout(async () => {
+    try {
+      const response = await fetch(`/api/messages/contacts?q=${encodeURIComponent(query)}`);
+      const result = await response.json();
+      if (!response.ok || result.error) throw new Error(result.error || 'Unable to search recipients.');
+      renderRecipientResults(result.contacts || []);
+      if (query && result.contacts && result.contacts.length === 1) {
+        const contact = result.contacts[0];
+        selectComposeRecipient(contact.id, contact.name, contact.handle, contact.email);
+      } else {
+        composeRecipient = null;
+        document.getElementById('compose-recipient-id').value = '';
+      }
+    } catch (error) {
+      console.error('Search recipients error:', error);
+      renderRecipientResults([]);
+    }
+  }, 180);
+}
+
+function openCompose() {
+  document.getElementById('compose-modal').classList.add('show');
+  document.getElementById('compose-to').value = '';
+  document.getElementById('compose-recipient-id').value = '';
+  document.getElementById('compose-subject').value = '';
+  document.getElementById('compose-body').value = '';
+  renderRecipientResults([]);
+  searchRecipients();
+}
+
+async function sendComposedMessage() {
+  const recipientId = document.getElementById('compose-recipient-id').value;
+  const to = document.getElementById('compose-to').value.trim();
+  const subj = document.getElementById('compose-subject').value.trim();
+  const body = document.getElementById('compose-body').value.trim();
+  if (!to||!body) { showToast('Please fill in recipient and message.','error'); return; }
+  try {
+    const response = await fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        receiverId: recipientId ? Number(recipientId) : undefined,
+        recipientQuery: recipientId ? '' : to,
+        subject: subj,
+        messageText: body
+      })
+    });
+    const result = await response.json();
+    if (!response.ok || result.error) throw new Error(result.error || 'Unable to send message.');
+    applyMessagePayload(currentRole, result);
+    document.getElementById('compose-modal').classList.remove('show');
+    ['compose-to','compose-subject','compose-body','compose-recipient-id'].forEach(id=>document.getElementById(id).value='');
+    renderRecipientResults([]);
+    renderInbox(currentRole);
+    updateBadges();
+    showToast('Message sent to '+to+'!','success');
+  } catch (error) {
+    console.error('Send composed message error:', error);
+    showToast(error.message || 'Could not send message.','error');
+  }
+}
+
+async function sendReply() {
+  const input = document.getElementById('reply-input');
+  const text = input.value.trim();
+  if (!text||!currentMsgId) return;
+  try {
+    const response = await fetch(`/api/messages/conversations/${currentMsgId.id}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageText: text })
+    });
+    const result = await response.json();
+    if (!response.ok || result.error) throw new Error(result.error || 'Unable to send reply.');
+    input.value=''; input.style.height='auto';
+    applyMessagePayload(currentMsgId.who, result);
+    const msg = findConversationRecord(currentMsgId.who, currentMsgId.id);
+    if (msg && result.conversation) {
+      msg.thread = result.conversation.thread || msg.thread;
+      msg.preview = msg.thread.length ? msg.thread[msg.thread.length - 1].text : msg.preview;
+      msg.unread = false;
+      msg.unreadCount = 0;
+      renderThread(msg);
+    }
+    renderInbox(currentMsgId.who);
+    updateBadges();
+    showToast('Reply sent!','success');
+  } catch (error) {
+    console.error('Reply message error:', error);
+    showToast(error.message || 'Could not send reply.','error');
+  }
+}
+
+function replyKeydown(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendReply();} }
+
+function deleteCurrentMessage() {
+  if (!currentMsgId) return;
+  fetch(`/api/messages/conversations/${currentMsgId.id}`, { method: 'DELETE' })
+    .then(response => response.json().then(result => ({ response, result })))
+    .then(({ response, result }) => {
+      if (!response.ok || result.error) throw new Error(result.error || 'Unable to delete conversation.');
+      applyMessagePayload(currentMsgId.who, result);
+      currentMsgId = null;
+      renderInbox(currentRole);
+      updateBadges();
+      showToast('Conversation deleted.','success');
+      goToInbox();
+    })
+    .catch(error => {
+      console.error('Delete conversation error:', error);
+      showToast(error.message || 'Could not delete conversation.','error');
+    });
+}
+
 function markNotifRead(id, who) {
   const notifs = (who==='leader'?data.leader:data.member).notifications;
   const n = notifs.find(n=>n.id===id); if(n){n.unread=false;renderNotifs(who);updateBadges();}
@@ -954,9 +1383,9 @@ function markAllRead(who) {
 // ════════════════════════════════════════
 function updateBadges() {
   const mn = data.member.notifications.filter(n=>n.unread).length;
-  const mm = data.member.messages.filter(m=>m.unread).length;
+  const mm = data.member.messageUnreadCount || data.member.messages.reduce((total, m) => total + (m.unreadCount || (m.unread ? 1 : 0)), 0);
   const ln = data.leader.notifications.filter(n=>n.unread).length;
-  const lm = data.leader.messages.filter(m=>m.unread).length;
+  const lm = data.leader.messageUnreadCount || data.leader.messages.reduce((total, m) => total + (m.unreadCount || (m.unread ? 1 : 0)), 0);
   setBadge('notif-badge',mn); setBadge('inbox-badge',mm);
   setBadge('leader-notif-badge',ln); setBadge('leader-inbox-badge',lm);
   const dot = document.getElementById('notif-dot');
@@ -1178,6 +1607,90 @@ function confirmDelete() {
 // ════════════════════════════════════════
 function fmtDate(s) {
   try{const d=new Date(s+'T00:00:00');return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}catch{return s}
+}
+
+function displayDate(value) {
+  if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return fmtDate(value);
+  return value;
+}
+
+function displayTime(value) {
+  const time = value || '09:00';
+  const [hour, minute] = time.split(':').map(Number);
+  if (Number.isNaN(hour)) return time;
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const twelveHour = hour % 12 || 12;
+  return `${twelveHour}:${String(minute || 0).padStart(2, '0')} ${suffix}`;
+}
+
+function reviewLabel(status) {
+  return status === 'approved' ? 'Approved' : status === 'rejected' ? 'Rejected' : 'Pending';
+}
+
+function reviewChipClass(status) {
+  return status === 'approved' ? 'confirmed' : status === 'rejected' ? 'no' : 'pending';
+}
+
+function groupRosterBySlot(roster) {
+  const groups = new Map();
+  roster.forEach(item => {
+    const key = `${item.date}|${item.serviceTime || '09:00'}`;
+    if (!groups.has(key)) groups.set(key, { date: item.date, serviceTime: item.serviceTime || '09:00', items: [] });
+    groups.get(key).items.push(item);
+  });
+  return Array.from(groups.values()).sort((a, b) => `${a.date} ${a.serviceTime}`.localeCompare(`${b.date} ${b.serviceTime}`));
+}
+
+async function refreshLeaderData() {
+  try {
+    const [membersResponse, meResponse] = await Promise.all([fetch('/api/members'), fetch('/api/me')]);
+    const membersResult = await membersResponse.json();
+    if (membersResult.members) {
+      data.members = membersResult.members.map(member => ({
+        ...member,
+        availability: (member.availability || []).map(item => ({
+          ...item,
+          serviceTime: item.serviceTime || '09:00',
+          reviewStatus: item.reviewStatus || 'pending'
+        }))
+      }));
+    }
+    if (meResponse.ok) {
+      const meResult = await meResponse.json();
+      if (meResult.user && meResult.user.role === 'leader') data.leader = normalizeUserState(meResult.user);
+    }
+  } catch (error) {
+    console.error('Error refreshing leader data:', error);
+  }
+}
+
+function startRealtimeSync() {
+  clearInterval(realtimeTimer);
+  realtimeTimer = setInterval(async () => {
+    if (currentRole === 'leader') {
+      await refreshLeaderData();
+      if (currentPage === 'leader-dashboard') renderLeaderDash();
+      if (currentPage === 'leader-roster') renderRoster();
+      if (currentPage === 'message-detail' && currentMsgId) await openMessage(currentMsgId.id, currentMsgId.who);
+      updateBadges();
+    } else if (currentRole === 'member') {
+      try {
+        const response = await fetch('/api/me');
+        if (response.ok) {
+          const result = await response.json();
+          if (result.user) data.member = normalizeUserState(result.user);
+          if (currentPage === 'dashboard') renderMemberDash();
+          if (currentPage === 'schedule') renderMemberSchedule();
+          if (currentPage === 'message-detail' && currentMsgId) await openMessage(currentMsgId.id, currentMsgId.who);
+          if (currentPage === 'notification') renderNotifs('member');
+          updateBadges();
+        }
+      } catch (error) {
+        console.error('Error refreshing member data:', error);
+      }
+    }
+  }, 7000);
 }
 
 let toastTimer;
