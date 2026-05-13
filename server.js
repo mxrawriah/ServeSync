@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
+const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcrypt');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -12,201 +12,30 @@ require('dotenv').config();
 const app = express();
 const PORT = 3000;
 
+// Initialize Supabase
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
+
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
 app.use(session({
-  secret: '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', // Change this in production
+  secret: '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',
   resave: false,
   saveUninitialized: true
 }));
 app.use(passport.initialize());
 app.use(passport.session());
-app.use(express.static('.')); // Serve static files from current directory
+app.use(express.static('.'));
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'servesync (3).html'));
 });
 
-// Database setup
-const db = new sqlite3.Database('./servesync.db', (err) => {
-  if (err) {
-    console.error('Error opening database:', err.message);
-  } else {
-    console.log('Connected to SQLite database.');
-    createTables();
-  }
-});
+console.log('Supabase initialized');
 
-function dbRun(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function(err) {
-      if (err) reject(err);
-      else resolve(this);
-    });
-  });
-}
-
-function dbAll(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
-}
-
-function dbGet(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
-}
-
-function addColumnIfMissing(table, column, definition) {
-  db.all(`PRAGMA table_info(${table})`, (err, columns) => {
-    if (err) return console.error(`Inspect ${table}:`, err);
-    if (!columns.some(c => c.name === column)) {
-      db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`, (alterErr) => {
-        if (alterErr) console.error(`Alter ${table}.${column}:`, alterErr);
-      });
-    }
-  });
-}
-
-// Create tables
-function createTables() {
-  db.run(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    password TEXT,
-    provider TEXT DEFAULT 'local',
-    google_id TEXT,
-    role TEXT NOT NULL,
-    first_name TEXT NOT NULL,
-    last_name TEXT NOT NULL,
-    handle TEXT,
-    phone TEXT,
-    bio TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-
-  // Migrate existing users table to allow nullable password if needed
-  db.get(`PRAGMA table_info(users)`, (err, row) => {
-    if (!err) {
-      db.all(`PRAGMA table_info(users)`, (err, columns) => {
-        if (!err) {
-          const passwordCol = columns.find(c => c.name === 'password');
-          if (passwordCol && passwordCol.notnull === 1) {
-            console.log('Migrating users table to allow nullable password');
-            db.serialize(() => {
-              db.run(`CREATE TABLE IF NOT EXISTS users_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE NOT NULL,
-                password TEXT,
-                provider TEXT DEFAULT 'local',
-                google_id TEXT,
-                role TEXT NOT NULL,
-                first_name TEXT NOT NULL,
-                last_name TEXT NOT NULL,
-                handle TEXT,
-                phone TEXT,
-                bio TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-              )`);
-              db.run(`INSERT INTO users_new (id, email, password, provider, google_id, role, first_name, last_name, handle, phone, bio, created_at)
-                      SELECT id, email, password, provider, google_id, role, first_name, last_name, handle, phone, bio, created_at FROM users`);
-              db.run(`DROP TABLE users`);
-              db.run(`ALTER TABLE users_new RENAME TO users`);
-            });
-          }
-        }
-      });
-    }
-  });
-
-  // Add columns if they don't exist (for existing databases)
-  db.run(`ALTER TABLE users ADD COLUMN provider TEXT DEFAULT 'local'`, (err) => {
-    if (err && !err.message.includes('duplicate column name')) console.error('Alter provider:', err);
-  });
-  db.run(`ALTER TABLE users ADD COLUMN google_id TEXT`, (err) => {
-    if (err && !err.message.includes('duplicate column name')) console.error('Alter google_id:', err);
-  });
-
-  db.run(`CREATE TABLE IF NOT EXISTS availability (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    date TEXT,
-    service_time TEXT DEFAULT '09:00',
-    role TEXT,
-    status TEXT,
-    review_status TEXT DEFAULT 'pending',
-    FOREIGN KEY (user_id) REFERENCES users (id)
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS schedule (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    date TEXT,
-    service_time TEXT DEFAULT '09:00',
-    role TEXT,
-    status TEXT,
-    FOREIGN KEY (user_id) REFERENCES users (id)
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS roster (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    leader_id INTEGER,
-    member_id INTEGER,
-    member_name TEXT,
-    date TEXT,
-    role TEXT,
-    FOREIGN KEY (leader_id) REFERENCES users (id),
-    FOREIGN KEY (member_id) REFERENCES users (id)
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS notifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    type TEXT,
-    title TEXT,
-    sub TEXT,
-    unread INTEGER DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users (id)
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS conversations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    participant_a_id INTEGER NOT NULL,
-    participant_b_id INTEGER NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(participant_a_id, participant_b_id),
-    FOREIGN KEY (participant_a_id) REFERENCES users (id),
-    FOREIGN KEY (participant_b_id) REFERENCES users (id)
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id INTEGER NOT NULL,
-    sender_id INTEGER NOT NULL,
-    receiver_id INTEGER NOT NULL,
-    subject TEXT,
-    message_text TEXT NOT NULL,
-    is_read INTEGER DEFAULT 0,
-    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (conversation_id) REFERENCES conversations (id),
-    FOREIGN KEY (sender_id) REFERENCES users (id),
-    FOREIGN KEY (receiver_id) REFERENCES users (id)
-  )`);
-
-  addColumnIfMissing('availability', 'service_time', `TEXT DEFAULT '09:00'`);
-  addColumnIfMissing('availability', 'review_status', `TEXT DEFAULT 'pending'`);
-  addColumnIfMissing('schedule', 'service_time', `TEXT DEFAULT '09:00'`);
-  addColumnIfMissing('roster', 'service_time', `TEXT DEFAULT '09:00'`);
-}
-
+// Helper functions
 function buildUserPayload(userRow, availability, schedule, roster = [], notifications = [], messages = [], sent = [], messageUnreadCount = 0) {
   return {
     id: userRow.id,
@@ -228,7 +57,7 @@ function buildUserPayload(userRow, availability, schedule, roster = [], notifica
 
 function formatMessageTime(value) {
   if (!value) return 'Recently';
-  const date = new Date(value.replace(' ', 'T'));
+  const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Recently';
   return date.toLocaleString();
 }
@@ -259,46 +88,50 @@ function formatConversationSummary(row) {
 
 async function getAccessibleContactIds(userRow) {
   if (userRow.role === 'leader') {
-    const memberRows = await dbAll(
-      'SELECT DISTINCT member_id AS id FROM roster WHERE leader_id = ? AND member_id IS NOT NULL',
-      [userRow.id]
-    );
-    const leaderRows = await dbAll(
-      'SELECT id FROM users WHERE role = ? AND id != ?',
-      ['leader', userRow.id]
-    );
-    return Array.from(new Set([...memberRows, ...leaderRows].map(row => Number(row.id)).filter(Boolean)));
+    const { data: memberRows } = await supabase
+      .from('roster')
+      .select('member_id')
+      .eq('leader_id', userRow.id);
+    
+    const { data: leaderRows } = await supabase
+      .from('users')
+      .select('id')
+      .eq('role', 'leader')
+      .neq('id', userRow.id);
+    
+    const memberIds = (memberRows || []).map(r => r.member_id).filter(Boolean);
+    const leaderIds = (leaderRows || []).map(r => r.id);
+    return Array.from(new Set([...memberIds, ...leaderIds]));
   }
 
-  const leaderRows = await dbAll(
-    'SELECT DISTINCT leader_id AS id FROM roster WHERE member_id = ? AND leader_id IS NOT NULL',
-    [userRow.id]
-  );
-  const leaderIds = leaderRows.map(row => Number(row.id)).filter(Boolean);
+  const { data: leaderRows } = await supabase
+    .from('roster')
+    .select('leader_id')
+    .eq('member_id', userRow.id);
+  
+  const leaderIds = (leaderRows || []).map(r => r.leader_id).filter(Boolean);
   if (!leaderIds.length) return [];
 
-  const memberRows = await dbAll(
-    `SELECT DISTINCT member_id AS id
-     FROM roster
-     WHERE leader_id IN (${leaderIds.map(() => '?').join(',')})
-       AND member_id IS NOT NULL
-       AND member_id != ?`,
-    [...leaderIds, userRow.id]
-  );
+  const { data: memberRows } = await supabase
+    .from('roster')
+    .select('member_id')
+    .in('leader_id', leaderIds)
+    .neq('member_id', userRow.id);
 
-  return Array.from(new Set([
-    ...leaderIds,
-    ...memberRows.map(row => Number(row.id)).filter(Boolean)
-  ]));
+  const memberIds = (memberRows || []).map(r => r.member_id).filter(Boolean);
+  return Array.from(new Set([...leaderIds, ...memberIds]));
 }
 
 async function getConversationByParticipants(userIdA, userIdB) {
   const a = Math.min(Number(userIdA), Number(userIdB));
   const b = Math.max(Number(userIdA), Number(userIdB));
-  return dbGet(
-    'SELECT * FROM conversations WHERE participant_a_id = ? AND participant_b_id = ?',
-    [a, b]
-  );
+  const { data } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('participant_a_id', a)
+    .eq('participant_b_id', b)
+    .single();
+  return data;
 }
 
 async function ensureConversation(userIdA, userIdB) {
@@ -306,38 +139,32 @@ async function ensureConversation(userIdA, userIdB) {
   const b = Math.max(Number(userIdA), Number(userIdB));
   const existing = await getConversationByParticipants(a, b);
   if (existing) return existing;
-  const result = await dbRun(
-    'INSERT INTO conversations (participant_a_id, participant_b_id) VALUES (?, ?)',
-    [a, b]
-  );
-  return dbGet('SELECT * FROM conversations WHERE id = ?', [result.lastID]);
+  
+  const { data } = await supabase
+    .from('conversations')
+    .insert([{ participant_a_id: a, participant_b_id: b }])
+    .select()
+    .single();
+  return data;
 }
 
 async function getAllowedContacts(userRow, query = '') {
   const allowedIds = await getAccessibleContactIds(userRow);
   if (!allowedIds.length) return [];
 
-  const params = [userRow.id, ...allowedIds];
-  let sql = `
-    SELECT id, first_name, last_name, handle, email, role
-    FROM users
-    WHERE id != ?
-      AND id IN (${allowedIds.map(() => '?').join(',')})
-  `;
+  let qb = supabase
+    .from('users')
+    .select('id, first_name, last_name, handle, email, role')
+    .neq('id', userRow.id)
+    .in('id', allowedIds);
 
   if (query) {
-    sql += ` AND (
-      lower(first_name || ' ' || last_name) LIKE ? OR
-      lower(COALESCE(handle, '')) LIKE ? OR
-      lower(COALESCE(email, '')) LIKE ?
-    )`;
-    const q = `%${query.toLowerCase()}%`;
-    params.push(q, q, q);
+    const q = query.toLowerCase();
+    qb = qb.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,handle.ilike.%${q}%,email.ilike.%${q}%`);
   }
 
-  sql += ' ORDER BY first_name, last_name';
-  const rows = await dbAll(sql, params);
-  return rows.map(row => ({
+  const { data } = await qb.order('first_name').order('last_name');
+  return (data || []).map(row => ({
     id: row.id,
     name: `${row.first_name} ${row.last_name}`,
     handle: row.handle,
@@ -347,51 +174,44 @@ async function getAllowedContacts(userRow, query = '') {
 }
 
 async function getMessageThread(userRow, conversationId) {
-  const conversation = await dbGet(
-    'SELECT * FROM conversations WHERE id = ? AND (participant_a_id = ? OR participant_b_id = ?)',
-    [conversationId, userRow.id, userRow.id]
-  );
+  const { data: conversation } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('id', conversationId)
+    .or(`participant_a_id.eq.${userRow.id},participant_b_id.eq.${userRow.id}`)
+    .single();
+  
   if (!conversation) return null;
 
   const otherUserId = conversation.participant_a_id === userRow.id ? conversation.participant_b_id : conversation.participant_a_id;
-  const otherUser = await dbGet(
-    'SELECT id, first_name, last_name, handle, email, role FROM users WHERE id = ?',
-    [otherUserId]
-  );
+  const { data: otherUser } = await supabase
+    .from('users')
+    .select('id, first_name, last_name, handle, email, role')
+    .eq('id', otherUserId)
+    .single();
+  
   if (!otherUser) return null;
 
-  const rows = await dbAll(
-    `SELECT
-      messages.id,
-      messages.conversation_id AS conversationId,
-      messages.sender_id AS senderId,
-      messages.receiver_id AS receiverId,
-      messages.subject,
-      messages.message_text AS messageText,
-      messages.is_read AS isRead,
-      messages.sent_at AS sentAt,
-      sender.first_name AS senderFirstName,
-      sender.last_name AS senderLastName,
-      sender.handle AS senderHandle
-    FROM messages
-    JOIN users sender ON sender.id = messages.sender_id
-    WHERE messages.conversation_id = ?
-    ORDER BY messages.sent_at ASC, messages.id ASC`,
-    [conversationId]
-  );
+  const { data: rows } = await supabase
+    .from('messages')
+    .select(`id, conversation_id, sender_id, receiver_id, subject, message_text, is_read, sent_at,
+      sender:sender_id(first_name, last_name, handle)`)
+    .eq('conversation_id', conversationId)
+    .order('sent_at', { ascending: true })
+    .order('id', { ascending: true });
 
-  const thread = rows.map(row => ({
+  const thread = (rows || []).map(row => ({
     id: row.id,
-    senderId: row.senderId,
-    receiverId: row.receiverId,
+    senderId: row.sender_id,
+    receiverId: row.receiver_id,
     subject: row.subject || '(no subject)',
-    text: row.messageText,
-    time: formatMessageTime(row.sentAt),
-    sentAt: row.sentAt,
-    isRead: Boolean(row.isRead),
-    role: row.senderId === userRow.id ? 'outgoing' : 'incoming',
-    sender: `${row.senderFirstName} ${row.senderLastName}`,
-    senderHandle: row.senderHandle
+    text: row.message_text,
+    time: formatMessageTime(row.sent_at),
+    sentAt: row.sent_at,
+    isRead: Boolean(row.is_read),
+    role: row.sender_id === userRow.id ? 'outgoing' : 'incoming',
+    sender: `${row.sender.first_name} ${row.sender.last_name}`,
+    senderHandle: row.sender.handle
   }));
 
   return {
@@ -409,121 +229,151 @@ async function getMessageThread(userRow, conversationId) {
 }
 
 async function getMessageSummaries(userRow) {
-  const rows = await dbAll(`
-    SELECT
-      c.id AS conversationId,
-      CASE WHEN c.participant_a_id = ? THEN c.participant_b_id ELSE c.participant_a_id END AS otherUserId,
-      other.first_name || ' ' || other.last_name AS otherName,
-      other.handle AS otherHandle,
-      other.email AS otherEmail,
-      other.role AS otherRole,
-      me.first_name || ' ' || me.last_name AS currentName,
-      latest.id AS latestMessageId,
-      latest.sender_id AS senderId,
-      latest.receiver_id AS receiverId,
-      latest.subject AS subject,
-      latest.message_text AS messageText,
-      latest.sent_at AS sentAt,
-      (
-        SELECT COUNT(*)
-        FROM messages unread
-        WHERE unread.conversation_id = c.id
-          AND unread.receiver_id = ?
-          AND unread.is_read = 0
-      ) AS unreadCount
-    FROM conversations c
-    JOIN users me ON me.id = ?
-    JOIN users other ON other.id = CASE
-      WHEN c.participant_a_id = ? THEN c.participant_b_id
-      ELSE c.participant_a_id
-    END
-    JOIN messages latest ON latest.id = (
-      SELECT id
-      FROM messages
-      WHERE conversation_id = c.id
-      ORDER BY sent_at DESC, id DESC
-      LIMIT 1
-    )
-    WHERE c.participant_a_id = ? OR c.participant_b_id = ?
-    ORDER BY latest.sent_at DESC, latest.id DESC
-  `, [userRow.id, userRow.id, userRow.id, userRow.id, userRow.id]);
+  // Get all conversations for the user
+  const { data: conversations } = await supabase
+    .from('conversations')
+    .select('*')
+    .or(`participant_a_id.eq.${userRow.id},participant_b_id.eq.${userRow.id}`);
 
-  const summaries = rows.map(formatConversationSummary);
+  const summaries = [];
+  let unreadCount = 0;
+
+  for (const conversation of conversations || []) {
+    const otherUserId = conversation.participant_a_id === userRow.id ? conversation.participant_b_id : conversation.participant_a_id;
+    
+    const { data: otherUser } = await supabase
+      .from('users')
+      .select('id, first_name, last_name, handle, email, role')
+      .eq('id', otherUserId)
+      .single();
+    
+    if (!otherUser) continue;
+
+    const { data: messages } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversation.id)
+      .order('sent_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(1);
+
+    if (!messages || messages.length === 0) continue;
+
+    const latestMessage = messages[0];
+    const displayName = otherUser.handle ? `${otherUser.first_name} ${otherUser.last_name} (${otherUser.handle})` : `${otherUser.first_name} ${otherUser.last_name}`;
+
+    const { data: unreadMessages } = await supabase
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', conversation.id)
+      .eq('receiver_id', userRow.id)
+      .eq('is_read', 0);
+
+    const messageUnreadCount = (unreadMessages || []).length;
+    unreadCount += messageUnreadCount;
+
+    summaries.push({
+      id: conversation.id,
+      conversationId: conversation.id,
+      from: displayName,
+      to: `${userRow.first_name} ${userRow.last_name}`,
+      subject: latestMessage.subject || '(no subject)',
+      preview: latestMessage.message_text || '',
+      time: formatMessageTime(latestMessage.sent_at),
+      unread: messageUnreadCount > 0,
+      unreadCount: messageUnreadCount,
+      latestMessageId: latestMessage.id,
+      latestSenderId: latestMessage.sender_id,
+      latestReceiverId: latestMessage.receiver_id,
+      otherUserId: otherUser.id,
+      otherName: `${otherUser.first_name} ${otherUser.last_name}`,
+      otherHandle: otherUser.handle,
+      otherEmail: otherUser.email,
+      otherRole: otherUser.role,
+      sentAt: latestMessage.sent_at,
+      senderId: latestMessage.sender_id,
+      receiverId: latestMessage.receiver_id
+    });
+  }
+
+  summaries.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt));
+
   return {
     conversations: summaries,
     sent: summaries.filter(item => item.latestSenderId === userRow.id),
-    unreadCount: rows.reduce((total, row) => total + Number(row.unreadCount || 0), 0)
+    unreadCount
   };
 }
 
-function respondWithUserData(userRow, res) {
-  db.all(`SELECT id, date, service_time AS serviceTime, role, status, review_status AS reviewStatus FROM availability WHERE user_id = ? ORDER BY date, service_time`, [userRow.id], (err, availability) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
+async function respondWithUserData(userRow, res) {
+  try {
+    const { data: availability } = await supabase
+      .from('availability')
+      .select('id, date, service_time, role, status, review_status')
+      .eq('user_id', userRow.id)
+      .order('date')
+      .order('service_time');
+
+    const { data: schedule } = await supabase
+      .from('schedule')
+      .select('id, date, service_time, role, status')
+      .eq('user_id', userRow.id)
+      .order('date')
+      .order('service_time');
+
+    const { data: notifications } = await supabase
+      .from('notifications')
+      .select('id, type, title, sub, unread, created_at')
+      .eq('user_id', userRow.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    const formattedNotifications = (notifications || []).map(n => ({
+      ...n,
+      unread: Boolean(n.unread),
+      time: formatMessageTime(n.created_at)
+    }));
+
+    const messagePayload = await getMessageSummaries(userRow);
+
+    if (userRow.role !== 'leader') {
+      return res.json({
+        user: buildUserPayload(
+          userRow,
+          availability || [],
+          schedule || [],
+          [],
+          formattedNotifications,
+          messagePayload.conversations,
+          messagePayload.sent,
+          messagePayload.unreadCount
+        )
+      });
     }
 
-    db.all(`SELECT id, date, service_time AS serviceTime, role, status FROM schedule WHERE user_id = ? ORDER BY date, service_time`, [userRow.id], (err, schedule) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
+    const { data: roster } = await supabase
+      .from('roster')
+      .select('id, member_id, member_name, date, service_time, role')
+      .eq('leader_id', userRow.id)
+      .order('date')
+      .order('service_time');
 
-      db.all(`SELECT id, type, title, sub, unread, created_at AS createdAt FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`, [userRow.id], (err, notifications) => {
-        if (err) {
-          return res.status(500).json({ error: 'Database error' });
-        }
-
-        const formattedNotifications = notifications.map(n => ({
-          ...n,
-          unread: Boolean(n.unread),
-          time: n.createdAt ? new Date(n.createdAt.replace(' ', 'T')).toLocaleString() : 'Recently'
-        }));
-
-        const messagePayloadPromise = getMessageSummaries(userRow);
-
-        if (userRow.role !== 'leader') {
-          return messagePayloadPromise.then(messagePayload => {
-            res.json({
-              user: buildUserPayload(
-                userRow,
-                availability,
-                schedule,
-                [],
-                formattedNotifications,
-                messagePayload.conversations,
-                messagePayload.sent,
-                messagePayload.unreadCount
-              )
-            });
-          }).catch(() => res.status(500).json({ error: 'Database error' }));
-        }
-
-        db.all(`SELECT id, member_id AS memberId, member_name AS memberName, date, service_time AS serviceTime, role FROM roster WHERE leader_id = ? ORDER BY date, service_time`, [userRow.id], async (err, roster) => {
-          if (err) {
-            return res.status(500).json({ error: 'Database error' });
-          }
-
-          try {
-            const messagePayload = await messagePayloadPromise;
-            res.json({
-              user: buildUserPayload(
-                userRow,
-                availability,
-                schedule,
-                roster,
-                formattedNotifications,
-                messagePayload.conversations,
-                messagePayload.sent,
-                messagePayload.unreadCount
-              )
-            });
-          } catch (payloadErr) {
-            console.error('Load message payload error:', payloadErr);
-            res.status(500).json({ error: 'Database error' });
-          }
-        });
-      });
+    res.json({
+      user: buildUserPayload(
+        userRow,
+        availability || [],
+        schedule || [],
+        roster || [],
+        formattedNotifications,
+        messagePayload.conversations,
+        messagePayload.sent,
+        messagePayload.unreadCount
+      )
     });
-  });
+  } catch (err) {
+    console.error('Respond with user data error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 }
 
 // Passport configuration
@@ -532,46 +382,44 @@ passport.use(new GoogleStrategy({
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     callbackURL: "http://localhost:3000/auth/google/callback"
   },
-  function(accessToken, refreshToken, profile, done) {
-    // Find or create user
+  async function(accessToken, refreshToken, profile, done) {
     const email = profile.emails[0].value;
     const firstName = profile.name.givenName;
     const lastName = profile.name.familyName;
     const googleId = profile.id;
 
-    db.get('SELECT * FROM users WHERE google_id = ? OR email = ?', [googleId, email], (err, user) => {
-      if (err) return done(err);
+    const { data: user } = await supabase
+      .from('users')
+      .select('*')
+      .or(`google_id.eq.${googleId},email.eq.${email}`)
+      .single();
 
-      if (user) {
-        // Update google_id if not set
-        if (!user.google_id) {
-          db.run('UPDATE users SET google_id = ?, provider = ? WHERE id = ?', [googleId, 'google', user.id]);
-        }
-        return done(null, user);
-      } else {
-        // Create new user
-        const handle = `@${firstName.toLowerCase()}`;
-        db.run(`INSERT INTO users (email, password, provider, google_id, role, first_name, last_name, handle)
-                VALUES (?, ?, 'google', ?, 'member', ?, ?, ?)`,
-          [email, '', googleId, firstName, lastName, handle],
-          function(err) {
-            if (err) return done(err);
-            const newUser = {
-              id: this.lastID,
-              email,
-              provider: 'google',
-              google_id: googleId,
-              role: 'member',
-              first_name: firstName,
-              last_name: lastName,
-              handle,
-              phone: '',
-              bio: ''
-            };
-            done(null, newUser);
-          });
+    if (user) {
+      if (!user.google_id) {
+        await supabase
+          .from('users')
+          .update({ google_id: googleId, provider: 'google' })
+          .eq('id', user.id);
       }
-    });
+      return done(null, user);
+    }
+
+    const handle = `@${firstName.toLowerCase()}`;
+    const { data: newUser } = await supabase
+      .from('users')
+      .insert([{
+        email,
+        provider: 'google',
+        google_id: googleId,
+        role: 'member',
+        first_name: firstName,
+        last_name: lastName,
+        handle
+      }])
+      .select()
+      .single();
+
+    done(null, newUser);
   }
 ));
 
@@ -579,26 +427,26 @@ passport.serializeUser(function(user, done) {
   done(null, user.id);
 });
 
-passport.deserializeUser(function(id, done) {
-  db.get('SELECT * FROM users WHERE id = ?', [id], (err, user) => {
-    done(err, user);
-  });
+passport.deserializeUser(async function(id, done) {
+  const { data: user } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', id)
+    .single();
+  done(null, user);
 });
 
 // Routes
 
-// Google Auth
 app.get('/auth/google',
   passport.authenticate('google', { scope: ['profile', 'email'] }));
 
 app.get('/auth/google/callback', 
   passport.authenticate('google', { failureRedirect: '/login' }),
   function(req, res) {
-    // Successful authentication, redirect to home
     res.redirect('/');
   });
 
-// Get current user
 app.get('/api/me', (req, res) => {
   if (req.user) {
     respondWithUserData(req.user, res);
@@ -607,7 +455,6 @@ app.get('/api/me', (req, res) => {
   }
 });
 
-// Logout
 app.post('/api/logout', (req, res) => {
   req.logout((err) => {
     if (err) return res.status(500).json({ error: 'Logout error' });
@@ -615,72 +462,74 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
-// Signup
 app.post('/api/signup', async (req, res) => {
   const { firstName, lastName, email, password, role } = req.body;
 
   try {
-    // Check if user already exists
-    db.get('SELECT email FROM users WHERE email = ?', [email], async (err, row) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('email')
+      .eq('email', email)
+      .single();
+
+    if (existingUser) {
+      return res.status(400).json({ error: 'User already exists' });
+    }
+
+    let hashedPassword = null;
+    if (password) {
+      hashedPassword = await bcrypt.hash(password, 10);
+    }
+    const handle = `@${firstName.toLowerCase()}`;
+
+    const { data: newUser } = await supabase
+      .from('users')
+      .insert([{
+        email,
+        password: hashedPassword,
+        role,
+        first_name: firstName,
+        last_name: lastName,
+        handle
+      }])
+      .select()
+      .single();
+
+    const user = {
+      id: newUser.id,
+      name: `${firstName} ${lastName}`,
+      handle,
+      email,
+      phone: '',
+      bio: '',
+      role,
+      availability: [],
+      schedule: [],
+      messages: [],
+      notifications: []
+    };
+
+    req.login(newUser, (loginErr) => {
+      if (loginErr) {
+        return res.status(500).json({ error: 'Login error' });
       }
-
-      if (row) {
-        return res.status(400).json({ error: 'User already exists' });
-      }
-
-      // Hash password if provided
-      let hashedPassword = null;
-      if (password) {
-        hashedPassword = await bcrypt.hash(password, 10);
-      }
-      const handle = `@${firstName.toLowerCase()}`;
-
-      // Insert user
-      db.run(`INSERT INTO users (email, password, role, first_name, last_name, handle)
-              VALUES (?, ?, ?, ?, ?, ?)`,
-        [email, hashedPassword, role, firstName, lastName, handle],
-        function(err) {
-          if (err) {
-            return res.status(500).json({ error: 'Error creating user' });
-          }
-
-          const user = {
-            id: this.lastID,
-            name: `${firstName} ${lastName}`,
-            handle,
-            email,
-            phone: '',
-            bio: '',
-            role,
-            availability: [],
-            schedule: [],
-            messages: [],
-            notifications: []
-          };
-
-          req.login({ id: this.lastID, email, role, first_name: firstName, last_name: lastName, handle }, (loginErr) => {
-            if (loginErr) {
-              return res.status(500).json({ error: 'Login error' });
-            }
-            res.json({ message: 'User created successfully', user });
-          });
-        });
+      res.json({ message: 'User created successfully', user });
     });
   } catch (error) {
+    console.error('Signup error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Login
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
 
-  db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
+  try {
+    const { data: user } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
 
     if (!user) {
       return res.status(400).json({ error: 'User not found' });
@@ -690,7 +539,6 @@ app.post('/api/login', (req, res) => {
       return res.status(400).json({ error: 'Please login with Google' });
     }
 
-    // Check password
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
       return res.status(400).json({ error: 'Invalid password' });
@@ -702,71 +550,48 @@ app.post('/api/login', (req, res) => {
       }
       respondWithUserData(user, res);
     });
-  });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
-// Get all members (for leader view)
-app.get('/api/members', (req, res) => {
-  db.all(`
-    SELECT
-      users.id,
-      users.first_name,
-      users.last_name,
-      users.handle,
-      users.role,
-      availability.date AS availability_date,
-      availability.id AS availability_id,
-      availability.service_time AS availability_time,
-      availability.role AS availability_role,
-      availability.status AS availability_status,
-      availability.review_status AS availability_review_status
-    FROM users
-    LEFT JOIN availability ON availability.user_id = users.id
-    WHERE users.role = 'member'
-    ORDER BY users.id, availability.date
-  `, [], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
+app.get('/api/members', async (req, res) => {
+  try {
+    const { data: rows } = await supabase
+      .from('users')
+      .select(`id, first_name, last_name, handle, role, availability(id, date, service_time, role, status, review_status)`)
+      .eq('role', 'member');
 
-    const membersById = new Map();
-    rows.forEach(row => {
-      if (!membersById.has(row.id)) {
-        membersById.set(row.id, {
-          id: row.id,
-          name: `${row.first_name} ${row.last_name}`,
-          handle: row.handle,
-          role: row.role,
-          availability: []
-        });
-      }
-
-      if (row.availability_date) {
-        membersById.get(row.id).availability.push({
-          id: row.availability_id,
-          date: row.availability_date,
-          serviceTime: row.availability_time || '09:00',
-          role: row.availability_role,
-          status: row.availability_status,
-          reviewStatus: row.availability_review_status || 'pending'
-        });
-      }
-    });
-
-    const members = Array.from(membersById.values());
+    const members = (rows || []).map(row => ({
+      id: row.id,
+      name: `${row.first_name} ${row.last_name}`,
+      handle: row.handle,
+      role: row.role,
+      availability: (row.availability || []).map(a => ({
+        id: a.id,
+        date: a.date,
+        serviceTime: a.service_time || '09:00',
+        role: a.role,
+        status: a.status,
+        reviewStatus: a.review_status || 'pending'
+      }))
+    }));
 
     res.json({ members });
-  });
+  } catch (error) {
+    console.error('Get members error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
-// Get all users
-app.get('/api/users', (req, res) => {
-  db.all(`SELECT id, email, role, first_name, last_name, handle, phone, bio, created_at FROM users`, [], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
+app.get('/api/users', async (req, res) => {
+  try {
+    const { data: rows } = await supabase
+      .from('users')
+      .select('id, email, role, first_name, last_name, handle, phone, bio, created_at');
 
-    const users = rows.map(row => ({
+    const users = (rows || []).map(row => ({
       id: row.id,
       name: `${row.first_name} ${row.last_name}`,
       email: row.email,
@@ -778,11 +603,13 @@ app.get('/api/users', (req, res) => {
     }));
 
     res.json({ users });
-  });
+  } catch (error) {
+    console.error('Get users error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
-// Delete user (leader admin only)
-app.delete('/api/users/:userId', (req, res) => {
+app.delete('/api/users/:userId', async (req, res) => {
   const userId = Number(req.params.userId);
   if (!req.user) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -794,82 +621,67 @@ app.delete('/api/users/:userId', (req, res) => {
     return res.status(403).json({ error: 'Cannot delete your own account from admin panel' });
   }
 
-  db.get('SELECT id FROM users WHERE id = ?', [userId], (err, user) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+  try {
+    await supabase.from('availability').delete().eq('user_id', userId);
+    await supabase.from('schedule').delete().eq('user_id', userId);
+    await supabase.from('messages').delete().or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
+    await supabase.from('conversations').delete().or(`participant_a_id.eq.${userId},participant_b_id.eq.${userId}`);
+    await supabase.from('notifications').delete().eq('user_id', userId);
+    await supabase.from('users').delete().eq('id', userId);
 
-    db.run('DELETE FROM availability WHERE user_id = ?', [userId], (err) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      db.run('DELETE FROM schedule WHERE user_id = ?', [userId], (err) => {
-        if (err) {
-          return res.status(500).json({ error: 'Database error' });
-        }
-        db.run('DELETE FROM messages WHERE sender_id = ? OR receiver_id = ?', [userId, userId], (err) => {
-          if (err) {
-            return res.status(500).json({ error: 'Database error' });
-          }
-          db.run('DELETE FROM conversations WHERE participant_a_id = ? OR participant_b_id = ?', [userId, userId], (convErr) => {
-            if (convErr) {
-              return res.status(500).json({ error: 'Database error' });
-            }
-            db.run('DELETE FROM notifications WHERE user_id = ?', [userId], (notifErr) => {
-              if (notifErr) {
-                return res.status(500).json({ error: 'Database error' });
-              }
-              db.run('DELETE FROM users WHERE id = ?', [userId], function(err) {
-                if (err) {
-                  return res.status(500).json({ error: 'Database error' });
-                }
-                res.json({ message: 'User deleted successfully' });
-              });
-            });
-          });
-        });
-      });
-    });
-  });
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
-// Update availability
-app.post('/api/availability', (req, res) => {
+app.post('/api/availability', async (req, res) => {
   const { userId, availability } = req.body;
 
-  // Delete existing availability
-  db.run('DELETE FROM availability WHERE user_id = ?', [userId], (err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
+  try {
+    await supabase.from('availability').delete().eq('user_id', userId);
 
-    // Insert new availability
     if (availability && Array.isArray(availability)) {
-      const stmt = db.prepare('INSERT INTO availability (user_id, date, service_time, role, status, review_status) VALUES (?, ?, ?, ?, ?, ?)');
-      availability.forEach(item => {
-        stmt.run([userId, item.date, item.serviceTime || item.service_time || '09:00', item.role, item.status, item.reviewStatus || item.review_status || 'pending']);
-      });
-      stmt.finalize();
+      const records = availability.map(item => ({
+        user_id: userId,
+        date: item.date,
+        service_time: item.serviceTime || item.service_time || '09:00',
+        role: item.role,
+        status: item.status,
+        review_status: item.reviewStatus || item.review_status || 'pending'
+      }));
+      await supabase.from('availability').insert(records);
     }
 
-    db.get('SELECT first_name, last_name FROM users WHERE id = ?', [userId], (userErr, member) => {
-      if (!userErr && member) {
-        db.all("SELECT id FROM users WHERE role = 'leader'", [], (leaderErr, leaders) => {
-          if (!leaderErr && leaders.length) {
-            const stmt = db.prepare('INSERT INTO notifications (user_id, type, title, sub) VALUES (?, ?, ?, ?)');
-            leaders.forEach(leader => {
-              stmt.run([leader.id, 'calendar', 'Availability submitted', `${member.first_name} ${member.last_name} submitted availability for review`]);
-            });
-            stmt.finalize();
-          }
-        });
+    const { data: member } = await supabase
+      .from('users')
+      .select('first_name, last_name')
+      .eq('id', userId)
+      .single();
+
+    if (member) {
+      const { data: leaders } = await supabase
+        .from('users')
+        .select('id')
+        .eq('role', 'leader');
+
+      if (leaders && leaders.length) {
+        const notifs = leaders.map(leader => ({
+          user_id: leader.id,
+          type: 'calendar',
+          title: 'Availability submitted',
+          sub: `${member.first_name} ${member.last_name} submitted availability for review`
+        }));
+        await supabase.from('notifications').insert(notifs);
       }
-      res.json({ message: 'Availability updated' });
-    });
-  });
+    }
+
+    res.json({ message: 'Availability updated' });
+  } catch (error) {
+    console.error('Update availability error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 app.get('/api/messages/contacts', async (req, res) => {
@@ -889,10 +701,13 @@ app.get('/api/messages/conversations/:conversationId', async (req, res) => {
   try {
     const payload = await getMessageThread(req.user, conversationId);
     if (!payload) return res.status(404).json({ error: 'Conversation not found' });
-    await dbRun(
-      'UPDATE messages SET is_read = 1 WHERE conversation_id = ? AND receiver_id = ?',
-      [conversationId, req.user.id]
-    );
+    
+    await supabase
+      .from('messages')
+      .update({ is_read: 1 })
+      .eq('conversation_id', conversationId)
+      .eq('receiver_id', req.user.id);
+
     res.json({ conversation: payload });
   } catch (err) {
     console.error('Load conversation error:', err);
@@ -932,32 +747,43 @@ app.post('/api/messages', async (req, res) => {
       return res.status(403).json({ error: 'You are not allowed to message this user.' });
     }
 
-    const recipient = await dbGet('SELECT id, first_name, last_name, handle, email, role FROM users WHERE id = ?', [resolvedReceiverId]);
+    const { data: recipient } = await supabase
+      .from('users')
+      .select('id, first_name, last_name, handle, email, role')
+      .eq('id', resolvedReceiverId)
+      .single();
+
     if (!recipient) return res.status(404).json({ error: 'Recipient not found' });
 
     const conversation = await ensureConversation(senderId, resolvedReceiverId);
     const finalSubject = String(subject || '').trim() || '(no subject)';
-    const messageResult = await dbRun(
-      'INSERT INTO messages (conversation_id, sender_id, receiver_id, subject, message_text, is_read) VALUES (?, ?, ?, ?, ?, 0)',
-      [conversation.id, senderId, resolvedReceiverId, finalSubject, String(messageText).trim()]
-    );
+    
+    const { data: message } = await supabase
+      .from('messages')
+      .insert([{
+        conversation_id: conversation.id,
+        sender_id: senderId,
+        receiver_id: resolvedReceiverId,
+        subject: finalSubject,
+        message_text: String(messageText).trim(),
+        is_read: 0
+      }])
+      .select()
+      .single();
 
-    await dbRun(
-      'INSERT INTO notifications (user_id, type, title, sub) VALUES (?, ?, ?, ?)',
-      [
-        resolvedReceiverId,
-        'message',
-        `New message from ${req.user.first_name} ${req.user.last_name}`,
-        finalSubject
-      ]
-    );
+    await supabase.from('notifications').insert([{
+      user_id: resolvedReceiverId,
+      type: 'message',
+      title: `New message from ${req.user.first_name} ${req.user.last_name}`,
+      sub: finalSubject
+    }]);
 
     const thread = await getMessageThread(req.user, conversation.id);
     const summaries = await getMessageSummaries(req.user);
     res.json({
       message: 'Message sent',
       messageItem: {
-        id: messageResult.lastID,
+        id: message.id,
         conversationId: conversation.id,
         receiverId: resolvedReceiverId,
         subject: finalSubject,
@@ -979,30 +805,45 @@ app.post('/api/messages/conversations/:conversationId/reply', async (req, res) =
   const conversationId = Number(req.params.conversationId);
   const { messageText } = req.body;
   try {
-    const conversation = await dbGet(
-      'SELECT * FROM conversations WHERE id = ? AND (participant_a_id = ? OR participant_b_id = ?)',
-      [conversationId, req.user.id, req.user.id]
-    );
+    const { data: conversation } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('id', conversationId)
+      .or(`participant_a_id.eq.${req.user.id},participant_b_id.eq.${req.user.id}`)
+      .single();
+
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
     if (!messageText || !String(messageText).trim()) {
       return res.status(400).json({ error: 'Message text is required.' });
     }
 
     const receiverId = conversation.participant_a_id === req.user.id ? conversation.participant_b_id : conversation.participant_a_id;
-    const reply = await dbRun(
-      'INSERT INTO messages (conversation_id, sender_id, receiver_id, subject, message_text, is_read) VALUES (?, ?, ?, ?, ?, 0)',
-      [conversationId, req.user.id, receiverId, '(reply)', String(messageText).trim()]
-    );
-    await dbRun(
-      'INSERT INTO notifications (user_id, type, title, sub) VALUES (?, ?, ?, ?)',
-      [receiverId, 'message', `New reply from ${req.user.first_name} ${req.user.last_name}`, String(messageText).trim().slice(0, 80)]
-    );
+    
+    const { data: reply } = await supabase
+      .from('messages')
+      .insert([{
+        conversation_id: conversationId,
+        sender_id: req.user.id,
+        receiver_id: receiverId,
+        subject: '(reply)',
+        message_text: String(messageText).trim(),
+        is_read: 0
+      }])
+      .select()
+      .single();
+
+    await supabase.from('notifications').insert([{
+      user_id: receiverId,
+      type: 'message',
+      title: `New reply from ${req.user.first_name} ${req.user.last_name}`,
+      sub: String(messageText).trim().slice(0, 80)
+    }]);
 
     const thread = await getMessageThread(req.user, conversationId);
     const summaries = await getMessageSummaries(req.user);
     res.json({
       message: 'Reply sent',
-      replyId: reply.lastID,
+      replyId: reply.id,
       conversation: thread,
       messages: summaries.conversations,
       sent: summaries.sent,
@@ -1018,13 +859,21 @@ app.patch('/api/messages/conversations/:conversationId/read', async (req, res) =
   if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
   const conversationId = Number(req.params.conversationId);
   try {
-    const conversation = await dbGet(
-      'SELECT * FROM conversations WHERE id = ? AND (participant_a_id = ? OR participant_b_id = ?)',
-      [conversationId, req.user.id, req.user.id]
-    );
+    const { data: conversation } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('id', conversationId)
+      .or(`participant_a_id.eq.${req.user.id},participant_b_id.eq.${req.user.id}`)
+      .single();
+
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
 
-    await dbRun('UPDATE messages SET is_read = 1 WHERE conversation_id = ? AND receiver_id = ?', [conversationId, req.user.id]);
+    await supabase
+      .from('messages')
+      .update({ is_read: 1 })
+      .eq('conversation_id', conversationId)
+      .eq('receiver_id', req.user.id);
+
     const summaries = await getMessageSummaries(req.user);
     res.json({ message: 'Conversation marked as read', messages: summaries.conversations, sent: summaries.sent, unreadCount: summaries.unreadCount });
   } catch (err) {
@@ -1037,14 +886,18 @@ app.delete('/api/messages/conversations/:conversationId', async (req, res) => {
   if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
   const conversationId = Number(req.params.conversationId);
   try {
-    const conversation = await dbGet(
-      'SELECT * FROM conversations WHERE id = ? AND (participant_a_id = ? OR participant_b_id = ?)',
-      [conversationId, req.user.id, req.user.id]
-    );
+    const { data: conversation } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('id', conversationId)
+      .or(`participant_a_id.eq.${req.user.id},participant_b_id.eq.${req.user.id}`)
+      .single();
+
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
 
-    await dbRun('DELETE FROM messages WHERE conversation_id = ?', [conversationId]);
-    await dbRun('DELETE FROM conversations WHERE id = ?', [conversationId]);
+    await supabase.from('messages').delete().eq('conversation_id', conversationId);
+    await supabase.from('conversations').delete().eq('id', conversationId);
+
     const summaries = await getMessageSummaries(req.user);
     res.json({ message: 'Conversation deleted', messages: summaries.conversations, sent: summaries.sent, unreadCount: summaries.unreadCount });
   } catch (err) {
@@ -1053,7 +906,7 @@ app.delete('/api/messages/conversations/:conversationId', async (req, res) => {
   }
 });
 
-app.post('/api/schedule', (req, res) => {
+app.post('/api/schedule', async (req, res) => {
   const { userId, schedule } = req.body;
 
   const seenSlots = new Set();
@@ -1066,19 +919,25 @@ app.post('/api/schedule', (req, res) => {
     seenSlots.add(key);
   }
 
-  db.run('DELETE FROM schedule WHERE user_id = ?', [userId], (err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
+  try {
+    await supabase.from('schedule').delete().eq('user_id', userId);
+
+    if (schedule && Array.isArray(schedule)) {
+      const records = schedule.map(item => ({
+        user_id: userId,
+        date: item.date,
+        service_time: item.serviceTime || item.service_time || '09:00',
+        role: item.role,
+        status: item.status
+      }));
+      await supabase.from('schedule').insert(records);
     }
 
-    const stmt = db.prepare('INSERT INTO schedule (user_id, date, service_time, role, status) VALUES (?, ?, ?, ?, ?)');
-    (schedule || []).forEach(item => {
-      stmt.run([userId, item.date, item.serviceTime || item.service_time || '09:00', item.role, item.status]);
-    });
-    stmt.finalize();
-
     res.json({ message: 'Schedule updated' });
-  });
+  } catch (error) {
+    console.error('Update schedule error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 app.post('/api/roster', async (req, res) => {
@@ -1101,24 +960,36 @@ app.post('/api/roster', async (req, res) => {
     const slotConflict = await findRoleSlotConflict(date, normalizedTime, role);
     if (slotConflict) {
       return res.status(409).json({
-        error: `${role} is already assigned to ${slotConflict.memberName} on ${date} at ${normalizedTime}.`,
+        error: `${role} is already assigned to ${slotConflict.member_name} on ${date} at ${normalizedTime}.`,
         conflict: slotConflict
       });
     }
 
-    const rosterResult = await dbRun(
-      'INSERT INTO roster (leader_id, member_id, member_name, date, service_time, role) VALUES (?, ?, ?, ?, ?, ?)',
-      [leaderId, memberId, memberName, date, normalizedTime, role]
-    );
-    await dbRun(
-      'INSERT INTO schedule (user_id, date, service_time, role, status) VALUES (?, ?, ?, ?, ?)',
-      [memberId, date, normalizedTime, role, 'confirmed']
-    );
+    const { data: rosterItem } = await supabase
+      .from('roster')
+      .insert([{
+        leader_id: leaderId,
+        member_id: memberId,
+        member_name: memberName,
+        date,
+        service_time: normalizedTime,
+        role
+      }])
+      .select()
+      .single();
+
+    await supabase.from('schedule').insert([{
+      user_id: memberId,
+      date,
+      service_time: normalizedTime,
+      role,
+      status: 'confirmed'
+    }]);
 
     res.json({
       message: 'Roster assignment saved',
       rosterItem: {
-        id: rosterResult.lastID,
+        id: rosterItem.id,
         memberId,
         memberName,
         date,
@@ -1132,35 +1003,35 @@ app.post('/api/roster', async (req, res) => {
   }
 });
 
-app.delete('/api/roster/:id', (req, res) => {
+app.delete('/api/roster/:id', async (req, res) => {
   const rosterId = Number(req.params.id);
 
-  db.get('SELECT member_id AS memberId, date, service_time AS serviceTime, role FROM roster WHERE id = ?', [rosterId], (err, rosterItem) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
+  try {
+    const { data: rosterItem } = await supabase
+      .from('roster')
+      .select('member_id, date, service_time, role')
+      .eq('id', rosterId)
+      .single();
+
     if (!rosterItem) {
       return res.status(404).json({ error: 'Roster item not found' });
     }
 
-    db.run('DELETE FROM roster WHERE id = ?', [rosterId], (deleteErr) => {
-      if (deleteErr) {
-        return res.status(500).json({ error: 'Database error' });
-      }
+    await supabase.from('roster').delete().eq('id', rosterId);
+    await supabase
+      .from('schedule')
+      .delete()
+      .eq('user_id', rosterItem.member_id)
+      .eq('date', rosterItem.date)
+      .eq('service_time', rosterItem.service_time || '09:00')
+      .eq('role', rosterItem.role)
+      .eq('status', 'confirmed');
 
-      db.run(
-        'DELETE FROM schedule WHERE user_id = ? AND date = ? AND service_time = ? AND role = ? AND status = ?',
-        [rosterItem.memberId, rosterItem.date, rosterItem.serviceTime || '09:00', rosterItem.role, 'confirmed'],
-        (scheduleErr) => {
-          if (scheduleErr) {
-            return res.status(500).json({ error: 'Database error' });
-          }
-
-          res.json({ message: 'Roster item removed' });
-        }
-      );
-    });
-  });
+    res.json({ message: 'Roster item removed' });
+  } catch (error) {
+    console.error('Delete roster error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 app.patch('/api/availability/:id/review', async (req, res) => {
@@ -1172,34 +1043,34 @@ app.patch('/api/availability/:id/review', async (req, res) => {
   }
 
   try {
-    const submission = await dbGet(`
-      SELECT availability.*, users.first_name, users.last_name
-      FROM availability
-      JOIN users ON users.id = availability.user_id
-      WHERE availability.id = ?
-    `, [availabilityId]);
+    const { data: submission } = await supabase
+      .from('availability')
+      .select('*, user:user_id(first_name, last_name)')
+      .eq('id', availabilityId)
+      .single();
 
     if (!submission) {
       return res.status(404).json({ error: 'Availability submission not found' });
     }
 
-    await dbRun('UPDATE availability SET review_status = ? WHERE id = ?', [reviewStatus, availabilityId]);
-    await dbRun(
-      'INSERT INTO notifications (user_id, type, title, sub) VALUES (?, ?, ?, ?)',
-      [
-        submission.user_id,
-        reviewStatus === 'approved' ? 'schedule' : 'bell',
-        reviewStatus === 'approved' ? 'Availability approved' : 'Availability rejected',
-        `${submission.date} ${submission.service_time || '09:00'} ${submission.role} was ${reviewStatus}`
-      ]
-    );
+    await supabase
+      .from('availability')
+      .update({ review_status: reviewStatus })
+      .eq('id', availabilityId);
+
+    await supabase.from('notifications').insert([{
+      user_id: submission.user_id,
+      type: reviewStatus === 'approved' ? 'schedule' : 'bell',
+      title: reviewStatus === 'approved' ? 'Availability approved' : 'Availability rejected',
+      sub: `${submission.date} ${submission.service_time || '09:00'} ${submission.role} was ${reviewStatus}`
+    }]);
 
     res.json({
       message: `Availability ${reviewStatus}`,
       availability: {
         id: submission.id,
         userId: submission.user_id,
-        memberName: `${submission.first_name} ${submission.last_name}`,
+        memberName: `${submission.user.first_name} ${submission.user.last_name}`,
         date: submission.date,
         serviceTime: submission.service_time || '09:00',
         role: submission.role,
@@ -1227,50 +1098,80 @@ function assignmentRoleKey(date, serviceTime, role) {
 
 async function findMemberSlotConflict(memberId, date, serviceTime) {
   const normalizedTime = normalizeServiceTime(serviceTime);
-  const rosterConflict = await dbGet(
-    'SELECT id, member_id AS memberId, member_name AS memberName, date, service_time AS serviceTime, role FROM roster WHERE member_id = ? AND date = ? AND service_time = ? LIMIT 1',
-    [memberId, date, normalizedTime]
-  );
+  
+  const { data: rosterConflict } = await supabase
+    .from('roster')
+    .select('id, member_id, member_name, date, service_time, role')
+    .eq('member_id', memberId)
+    .eq('date', date)
+    .eq('service_time', normalizedTime)
+    .limit(1)
+    .single();
+
   if (rosterConflict) return { ...rosterConflict, source: 'roster' };
 
-  const scheduleConflict = await dbGet(
-    `SELECT
-      schedule.id,
-      schedule.user_id AS memberId,
-      users.first_name || ' ' || users.last_name AS memberName,
-      schedule.date,
-      schedule.service_time AS serviceTime,
-      schedule.role
-    FROM schedule
-    JOIN users ON users.id = schedule.user_id
-    WHERE schedule.user_id = ? AND schedule.date = ? AND schedule.service_time = ?
-    LIMIT 1`,
-    [memberId, date, normalizedTime]
-  );
-  return scheduleConflict ? { ...scheduleConflict, source: 'schedule' } : null;
+  const { data: scheduleConflict } = await supabase
+    .from('schedule')
+    .select('*, user:user_id(first_name, last_name)')
+    .eq('user_id', memberId)
+    .eq('date', date)
+    .eq('service_time', normalizedTime)
+    .limit(1)
+    .single();
+
+  if (scheduleConflict) {
+    return {
+      id: scheduleConflict.id,
+      member_id: scheduleConflict.user_id,
+      member_name: `${scheduleConflict.user.first_name} ${scheduleConflict.user.last_name}`,
+      date: scheduleConflict.date,
+      service_time: scheduleConflict.service_time,
+      role: scheduleConflict.role,
+      source: 'schedule'
+    };
+  }
+
+  return null;
 }
 
 async function findRoleSlotConflict(date, serviceTime, role) {
-  return dbGet(
-    'SELECT id, member_id AS memberId, member_name AS memberName, date, service_time AS serviceTime, role FROM roster WHERE date = ? AND service_time = ? AND role = ? LIMIT 1',
-    [date, normalizeServiceTime(serviceTime), role]
-  );
+  const { data } = await supabase
+    .from('roster')
+    .select('id, member_id, member_name, date, service_time, role')
+    .eq('date', date)
+    .eq('service_time', normalizeServiceTime(serviceTime))
+    .eq('role', role)
+    .limit(1)
+    .single();
+
+  return data || null;
 }
 
 async function findExistingAssignmentConflicts() {
-  return dbAll(`
-    SELECT
-      member_id AS memberId,
-      member_name AS memberName,
-      date,
-      service_time AS serviceTime,
-      COUNT(*) AS assignmentCount,
-      GROUP_CONCAT(role, ', ') AS roles
-    FROM roster
-    GROUP BY member_id, date, service_time
-    HAVING COUNT(*) > 1
-    ORDER BY date, service_time, member_name
-  `);
+  const { data } = await supabase
+    .from('roster')
+    .select('member_id, member_name, date, service_time, role');
+
+  const conflicts = new Map();
+  (data || []).forEach(item => {
+    const key = `${item.member_id}|${item.date}|${item.service_time}`;
+    if (!conflicts.has(key)) {
+      conflicts.set(key, { member_id: item.member_id, member_name: item.member_name, date: item.date, service_time: item.service_time, roles: [], count: 0 });
+    }
+    conflicts.get(key).roles.push(item.role);
+    conflicts.get(key).count += 1;
+  });
+
+  return Array.from(conflicts.values())
+    .filter(c => c.count > 1)
+    .map(c => ({
+      memberId: c.member_id,
+      memberName: c.member_name,
+      date: c.date,
+      serviceTime: c.service_time,
+      assignmentCount: c.count,
+      roles: c.roles.join(', ')
+    }));
 }
 
 function buildConflictFreeSchedule(approved, existingRoster, existingSchedule = []) {
@@ -1323,7 +1224,6 @@ function buildConflictFreeSchedule(approved, existingRoster, existingSchedule = 
       memberBusy.delete(timeKey);
     }
 
-    // Leave this role open only if no conflict-free candidate completes it.
     backtrack(index + 1);
   }
 
@@ -1348,31 +1248,31 @@ app.post('/api/schedule/generate', async (req, res) => {
       });
     }
 
-    const approved = await dbAll(`
-      SELECT
-        availability.id,
-        availability.user_id,
-        availability.date,
-        availability.service_time,
-        availability.role,
-        users.first_name,
-        users.last_name,
-        COALESCE(load.assignment_count, 0) AS assignment_count
-      FROM availability
-      JOIN users ON users.id = availability.user_id
-      LEFT JOIN (
-        SELECT member_id, COUNT(*) AS assignment_count
-        FROM roster
-        GROUP BY member_id
-      ) load ON load.member_id = availability.user_id
-      WHERE availability.status = 'yes'
-        AND availability.review_status = 'approved'
-      ORDER BY availability.date, availability.service_time, availability.role
-    `);
+    const { data: approved } = await supabase
+      .from('availability')
+      .select(`id, user_id, date, service_time, role, user:user_id(first_name, last_name)`)
+      .eq('status', 'yes')
+      .eq('review_status', 'approved')
+      .order('date')
+      .order('service_time')
+      .order('role');
 
-    const existingRoster = await dbAll('SELECT member_id, date, service_time, role FROM roster');
-    const existingSchedule = await dbAll('SELECT user_id, date, service_time, role FROM schedule');
-    const generated = buildConflictFreeSchedule(approved, existingRoster, existingSchedule);
+    const { data: existingRoster } = await supabase
+      .from('roster')
+      .select('member_id, date, service_time, role');
+
+    const { data: existingSchedule } = await supabase
+      .from('schedule')
+      .select('user_id, date, service_time, role');
+
+    const approvedWithLoadCount = (approved || []).map(item => ({
+      ...item,
+      first_name: item.user.first_name,
+      last_name: item.user.last_name,
+      assignment_count: (existingRoster || []).filter(r => r.member_id === item.user_id).length
+    }));
+
+    const generated = buildConflictFreeSchedule(approvedWithLoadCount, existingRoster || [], existingSchedule || []);
 
     const created = [];
     for (const item of generated) {
@@ -1383,21 +1283,36 @@ app.post('/api/schedule/generate', async (req, res) => {
       const slotConflict = await findRoleSlotConflict(item.date, normalizedTime, item.role);
       if (slotConflict) continue;
 
-      const rosterResult = await dbRun(
-        'INSERT INTO roster (leader_id, member_id, member_name, date, service_time, role) VALUES (?, ?, ?, ?, ?, ?)',
-        [leaderId, item.user_id, memberName, item.date, normalizedTime, item.role]
-      );
-      await dbRun(
-        'INSERT INTO schedule (user_id, date, service_time, role, status) VALUES (?, ?, ?, ?, ?)',
-        [item.user_id, item.date, normalizedTime, item.role, 'confirmed']
-      );
-      await dbRun(
-        'INSERT INTO notifications (user_id, type, title, sub) VALUES (?, ?, ?, ?)',
-        [item.user_id, 'schedule', 'Schedule published', `${item.date} ${normalizedTime} - ${item.role} is confirmed`]
-      );
+      const { data: rosterItem } = await supabase
+        .from('roster')
+        .insert([{
+          leader_id: leaderId,
+          member_id: item.user_id,
+          member_name: memberName,
+          date: item.date,
+          service_time: normalizedTime,
+          role: item.role
+        }])
+        .select()
+        .single();
+
+      await supabase.from('schedule').insert([{
+        user_id: item.user_id,
+        date: item.date,
+        service_time: normalizedTime,
+        role: item.role,
+        status: 'confirmed'
+      }]);
+
+      await supabase.from('notifications').insert([{
+        user_id: item.user_id,
+        type: 'schedule',
+        title: 'Schedule published',
+        sub: `${item.date} ${normalizedTime} - ${item.role} is confirmed`
+      }]);
 
       created.push({
-        id: rosterResult.lastID,
+        id: rosterItem.id,
         memberId: item.user_id,
         memberName,
         date: item.date,
@@ -1416,17 +1331,21 @@ app.post('/api/schedule/generate', async (req, res) => {
   }
 });
 
-// Update profile
-app.put('/api/profile/:userId', (req, res) => {
+app.put('/api/profile/:userId', async (req, res) => {
   const { userId } = req.params;
   const { phone, bio } = req.body;
 
-  db.run('UPDATE users SET phone = ?, bio = ? WHERE id = ?', [phone, bio, userId], function(err) {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
+  try {
+    await supabase
+      .from('users')
+      .update({ phone, bio })
+      .eq('id', userId);
+
     res.json({ message: 'Profile updated' });
-  });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 app.listen(PORT, () => {
