@@ -644,8 +644,19 @@ app.delete('/api/users/:userId', async (req, res) => {
 app.post('/api/availability', async (req, res) => {
   const { userId, availability } = req.body;
 
+  console.log('[availability] save requested', {
+    userId,
+    count: Array.isArray(availability) ? availability.length : 0
+  });
+
   try {
-    await supabase.from('availability').delete().eq('user_id', userId);
+    const { error: deleteError } = await supabase.from('availability').delete().eq('user_id', userId);
+    if (deleteError) {
+      console.error('[availability] delete failed', { userId, error: deleteError.message });
+      throw deleteError;
+    }
+
+    console.log('[availability] cleared existing rows', { userId });
 
     if (availability && Array.isArray(availability)) {
       const records = availability.map(item => ({
@@ -656,7 +667,16 @@ app.post('/api/availability', async (req, res) => {
         status: item.status,
         review_status: item.reviewStatus || item.review_status || 'pending'
       }));
-      await supabase.from('availability').insert(records);
+
+      const { error: insertError } = await supabase.from('availability').insert(records);
+      if (insertError) {
+        console.error('[availability] insert failed', { userId, error: insertError.message, records });
+        throw insertError;
+      }
+
+      console.log('[availability] rows inserted', { userId, count: records.length, records });
+    } else {
+      console.log('[availability] no rows to insert', { userId });
     }
 
     const { data: member } = await supabase
@@ -678,13 +698,21 @@ app.post('/api/availability', async (req, res) => {
           title: 'Availability submitted',
           sub: `${member.first_name} ${member.last_name} submitted availability for review`
         }));
-        await supabase.from('notifications').insert(notifs);
+
+        const { error: notificationError } = await supabase.from('notifications').insert(notifs);
+        if (notificationError) {
+          console.error('[availability] notification insert failed', { userId, error: notificationError.message });
+          throw notificationError;
+        }
+
+        console.log('[availability] notifications inserted', { userId, count: notifs.length });
       }
     }
 
+    console.log('[availability] save completed', { userId });
     res.json({ message: 'Availability updated' });
   } catch (error) {
-    console.error('Update availability error:', error);
+    console.error('[availability] save failed', { userId, error: error.message || error });
     res.status(500).json({ error: 'Database error' });
   }
 });
@@ -914,6 +942,11 @@ app.delete('/api/messages/conversations/:conversationId', async (req, res) => {
 app.post('/api/schedule', async (req, res) => {
   const { userId, schedule } = req.body;
 
+  console.log('[schedule] save requested', {
+    userId,
+    count: Array.isArray(schedule) ? schedule.length : 0
+  });
+
   const seenSlots = new Set();
   for (const item of schedule || []) {
     const serviceTime = normalizeServiceTime(item.serviceTime || item.service_time);
@@ -925,7 +958,13 @@ app.post('/api/schedule', async (req, res) => {
   }
 
   try {
-    await supabase.from('schedule').delete().eq('user_id', userId);
+    const { error: deleteError } = await supabase.from('schedule').delete().eq('user_id', userId);
+    if (deleteError) {
+      console.error('[schedule] delete failed', { userId, error: deleteError.message });
+      throw deleteError;
+    }
+
+    console.log('[schedule] cleared existing rows', { userId });
 
     if (schedule && Array.isArray(schedule)) {
       const records = schedule.map(item => ({
@@ -935,12 +974,22 @@ app.post('/api/schedule', async (req, res) => {
         role: item.role,
         status: item.status
       }));
-      await supabase.from('schedule').insert(records);
+
+      const { error: insertError } = await supabase.from('schedule').insert(records);
+      if (insertError) {
+        console.error('[schedule] insert failed', { userId, error: insertError.message, records });
+        throw insertError;
+      }
+
+      console.log('[schedule] rows inserted', { userId, count: records.length, records });
+    } else {
+      console.log('[schedule] no rows to insert', { userId });
     }
 
+    console.log('[schedule] save completed', { userId });
     res.json({ message: 'Schedule updated' });
   } catch (error) {
-    console.error('Update schedule error:', error);
+    console.error('[schedule] save failed', { userId, error: error.message || error });
     res.status(500).json({ error: 'Database error' });
   }
 });

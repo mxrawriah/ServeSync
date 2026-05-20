@@ -173,7 +173,11 @@ function normalizeUserState(user) {
   user.messageUnreadCount = user.messageUnreadCount || user.messages.reduce((total, item) => total + (item.unreadCount || (item.unread ? 1 : 0)), 0);
   if (user.role === 'leader') user.roster = user.roster || [];
   if (user.role === 'leader') {
-    user.roster = user.roster.map(item => ({...item, serviceTime: item.serviceTime || item.service_time || '09:00'}));
+    user.roster = user.roster.map(item => ({
+      ...item,
+      memberName: item.memberName || item.member_name || '',
+      serviceTime: item.serviceTime || item.service_time || '09:00'
+    }));
   }
   return user;
 }
@@ -428,36 +432,17 @@ function renderMemberSchedule() {
   sb.innerHTML = data.member.schedule.length
     ? data.member.schedule.map(s=>`<tr><td>${displayDate(s.date)}</td><td>${displayTime(s.serviceTime)}</td><td><span class="role-badge">${s.role}</span></td><td><span class="chip ${s.status}">${s.status==='confirmed'?'✓ Confirmed':'⏳ Pending'}</span></td></tr>`).join('')
     : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:18px;font-size:13px">No upcoming schedule</td></tr>';
+
   const ab = document.getElementById('avail-table-body');
   const availabilityDraft = data.member.availabilityDraft || [];
   ab.innerHTML = availabilityDraft.length
     ? availabilityDraft.map((a,i)=>`<tr>
-        <td>${fmtDate(a.date)}</td>
-        <td><select class="avail-select" onchange="data.member.availabilityDraft[${i}].role=this.value">${ROLES_LIST.map(r=>`<option ${r===a.role?'selected':''}>${r}</option>`).join('')}</select></td>
-        <td><select class="avail-select" onchange="data.member.availabilityDraft[${i}].status=this.value"><option value="yes" ${a.status==='yes'?'selected':''}>Yes ✓</option><option value="no" ${a.status==='no'?'selected':''}>No ✗</option></select></td>
-        <td><button onclick="rmAvail(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px">✕</button></td>
-      </tr>`).join('')
-    : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:14px;font-size:12px">No availability added yet</td></tr>';
-}
-
-function renderMemberSchedule() {
-  const sb = document.getElementById('member-sched-body');
-  sb.innerHTML = data.member.schedule.length
-    ? data.member.schedule.map(s=>`<tr><td>${displayDate(s.date)}</td><td>${displayTime(s.serviceTime)}</td><td><span class="role-badge">${s.role}</span></td><td><span class="chip ${s.status}">${s.status==='confirmed'?'✓ Confirmed':'⏳ Pending'}</span></td></tr>`).join('')
-    : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:18px;font-size:13px">No upcoming schedule</td></tr>';
-
-  const ab = document.getElementById('avail-table-body');
-  const savedAvailability = (data.member.availability || []).map(a => ({...a, saved: true}));
-  const availabilityDraft = (data.member.availabilityDraft || []).map(a => ({...a, saved: false}));
-  const availabilityRows = [...savedAvailability, ...availabilityDraft];
-  ab.innerHTML = availabilityRows.length
-    ? availabilityRows.map((a,i)=>`<tr>
         <td>${displayDate(a.date)}</td>
         <td>${displayTime(a.serviceTime)}</td>
         <td><span class="role-badge">${a.role}</span></td>
         <td><span class="chip ${a.status==='yes'?'yes':'no'}">${a.status==='yes'?'Available':'Unavailable'}</span></td>
         <td><span class="chip ${reviewChipClass(a.reviewStatus)}">${reviewLabel(a.reviewStatus)}</span></td>
-        <td>${a.saved ? '' : `<button onclick="rmAvail(${i - savedAvailability.length})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px">x</button>`}</td>
+        <td><button onclick="rmAvail(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px">x</button></td>
       </tr>`).join('')
     : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:14px;font-size:12px">No availability added yet</td></tr>';
 }
@@ -842,6 +827,7 @@ function addAvailRow() {
   if (!date) { showToast('Please select a date.','error'); return; }
   data.member.availabilityDraft = data.member.availabilityDraft || [];
   data.member.availabilityDraft.push({date,serviceTime,role,status,reviewStatus:'pending'});
+  persistCurrentUser();
   renderMemberSchedule();
   document.getElementById('add-avail-form').classList.remove('show');
   showToast('Added to availability.','success');
@@ -850,6 +836,7 @@ function addAvailRow() {
 function rmAvail(i) {
   data.member.availabilityDraft = data.member.availabilityDraft || [];
   data.member.availabilityDraft.splice(i,1);
+  persistCurrentUser();
   renderMemberSchedule();
 }
 
@@ -1679,7 +1666,11 @@ function startRealtimeSync() {
         const response = await fetch('/api/me');
         if (response.ok) {
           const result = await response.json();
-          if (result.user) data.member = normalizeUserState(result.user);
+          if (result.user) {
+            const availabilityDraft = data.member?.availabilityDraft || [];
+            data.member = normalizeUserState(result.user);
+            data.member.availabilityDraft = availabilityDraft;
+          }
           if (currentPage === 'dashboard') renderMemberDash();
           if (currentPage === 'schedule') renderMemberSchedule();
           if (currentPage === 'message-detail' && currentMsgId) await openMessage(currentMsgId.id, currentMsgId.who);
