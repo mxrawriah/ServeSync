@@ -407,6 +407,7 @@ function renderMemberDash() {
   document.getElementById('dash-greeting').textContent = `${h<12?'Good morning':h<17?'Good afternoon':'Good evening'}, ${name}! 👋`;
   document.getElementById('dash-date').textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
   document.getElementById('stat-upcoming').textContent = data.member.schedule.length;
+  document.getElementById('stat-served').textContent = getTimesServedCount(data.member.schedule);
   document.getElementById('stat-messages').textContent = data.member.messageUnreadCount || data.member.messages.reduce((total, m) => total + (m.unreadCount || (m.unread ? 1 : 0)), 0);
 
   const sb = document.getElementById('dash-sched-body');
@@ -1609,6 +1610,37 @@ function displayTime(value) {
   const suffix = hour >= 12 ? 'PM' : 'AM';
   const twelveHour = hour % 12 || 12;
   return `${twelveHour}:${String(minute || 0).padStart(2, '0')} ${suffix}`;
+}
+
+function parseScheduleDateTime(dateValue, timeValue) {
+  if (!dateValue) return null;
+
+  const time = timeValue || '09:00';
+  const [hour, minute] = time.split(':').map(Number);
+  const safeHour = Number.isNaN(hour) ? 9 : hour;
+  const safeMinute = Number.isNaN(minute) ? 0 : minute;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+    const [year, month, day] = dateValue.split('-').map(Number);
+    return new Date(year, month - 1, day, safeHour, safeMinute, 0, 0);
+  }
+
+  const withCurrentYear = new Date(`${dateValue}, ${new Date().getFullYear()} ${displayTime(time)}`);
+  if (!Number.isNaN(withCurrentYear.getTime())) return withCurrentYear;
+
+  const fallback = new Date(dateValue);
+  if (Number.isNaN(fallback.getTime())) return null;
+  fallback.setHours(safeHour, safeMinute, 0, 0);
+  return fallback;
+}
+
+function getTimesServedCount(schedule) {
+  const now = new Date();
+  return (schedule || []).filter(item => {
+    if (item.status !== 'confirmed') return false;
+    const scheduledAt = parseScheduleDateTime(item.date, item.serviceTime || item.service_time);
+    return scheduledAt && scheduledAt < now;
+  }).length;
 }
 
 function reviewLabel(status) {
