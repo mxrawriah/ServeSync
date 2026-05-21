@@ -10,7 +10,7 @@ const session = require('express-session');
 require('dotenv').config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Initialize Supabase
 const supabase = createClient(
@@ -30,6 +30,9 @@ app.use(passport.initialize());
 app.use(passport.session());
 app.use(express.static('.'));
 app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'servesync (3).html'));
+});
+app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'servesync (3).html'));
 });
 
@@ -1402,6 +1405,20 @@ app.put('/api/profile/:userId', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+function startServer(port, canFallback = true) {
+  const server = app.listen(port, () => {
+    console.log(`Server running on http://localhost:${port}`);
+  });
+
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE' && canFallback) {
+      const fallbackPort = Number(port) + 1;
+      console.log(`Port ${port} is in use. Trying http://localhost:${fallbackPort}`);
+      startServer(fallbackPort, false);
+      return;
+    }
+    throw error;
+  });
+}
+
+startServer(PORT);

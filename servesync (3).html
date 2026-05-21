@@ -8,7 +8,99 @@
 <link rel="stylesheet" href="servesync.css"/>
 </head>
 <body>
-<body>
+
+<div id="landing-page">
+  <header class="landing-nav">
+    <a href="#home" class="landing-brand" aria-label="ServeSync home">
+      <span class="landing-logo"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M7 17.2 16 9l9 8.2v8.3a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 7 25.5v-8.3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M16 14v8M12 18h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+      <span>ServeSync</span>
+    </a>
+    <nav class="landing-links" aria-label="Main navigation">
+      <a href="#home">Home</a>
+      <a href="#features">Features</a>
+      <a href="#about">About</a>
+      <a href="#contact">Contact</a>
+    </nav>
+    <button class="landing-nav-cta" onclick="showLoginPage()">Get Started</button>
+  </header>
+
+  <main>
+    <section class="landing-hero reveal" id="home">
+      <div class="hero-copy">
+        <div class="hero-kicker">
+          <span class="landing-logo small"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M7 17.2 16 9l9 8.2v8.3a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 7 25.5v-8.3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M16 14v8M12 18h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+          Built exclusively for J146 Church
+        </div>
+        <h1>ServeSync</h1>
+        <p class="hero-tagline">Simplifying Ministry Scheduling and Communication for J146.</p>
+        <p class="hero-description">ServeSync helps ministry leaders and members manage schedules, availability, announcements, and communication in one organized platform made for serving together.</p>
+        <button class="hero-cta" onclick="showLoginPage()">Get Started</button>
+      </div>
+      <div class="hero-preview" aria-label="ServeSync scheduling dashboard preview">
+        <div class="preview-card schedule-card">
+          <div class="preview-topline"><span>Sunday Service</span><strong>Ready</strong></div>
+          <div class="preview-row"><span class="dot orange"></span><div><b>Worship Team</b><small>3 members confirmed</small></div></div>
+          <div class="preview-row"><span class="dot gold"></span><div><b>Multimedia</b><small>No conflicts detected</small></div></div>
+          <div class="preview-row"><span class="dot green"></span><div><b>Ushers</b><small>Availability approved</small></div></div>
+        </div>
+        <div class="preview-card message-card">
+          <span class="message-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16v12H7l-3 3V5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span>
+          <div><b>Announcement sent</b><small>All ministry members notified</small></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="landing-section reveal" id="features">
+      <div class="section-heading"><span>Features</span><h2>Everything J146 ministries need to coordinate well.</h2></div>
+      <div class="feature-grid">
+        <article class="feature-card"><span>01</span><h3>Smart Ministry Scheduling</h3><p>Build service assignments with clarity across ministry teams and roles.</p></article>
+        <article class="feature-card"><span>02</span><h3>Availability Submission</h3><p>Let members submit available dates and preferred serving roles in one place.</p></article>
+        <article class="feature-card"><span>03</span><h3>Notifications & Announcements</h3><p>Keep everyone updated with timely reminders and ministry-wide notices.</p></article>
+        <article class="feature-card"><span>04</span><h3>Inbox Messaging System</h3><p>Support focused communication between leaders and ministry members.</p></article>
+        <article class="feature-card"><span>05</span><h3>Ministry Member Management</h3><p>Organize members, roles, contact details, and team assignments.</p></article>
+        <article class="feature-card"><span>06</span><h3>Conflict-Free Automated Scheduling</h3><p>Generate cleaner rosters by matching availability with ministry needs.</p></article>
+      </div>
+    </section>
+
+    <section class="about-section reveal" id="about">
+      <div><span class="section-label">About ServeSync</span><h2>Designed for organized, connected, and efficient ministry work.</h2></div>
+      <p>ServeSync gives J146 Church a shared space for scheduling, approvals, announcements, and team communication. Leaders can coordinate service rosters with less back-and-forth, while members can stay informed about where and when they are serving.</p>
+    </section>
+
+    <section class="workflow-section reveal">
+      <div class="section-heading"><span>Workflow</span><h2>From availability to confirmed schedules.</h2></div>
+      <div class="workflow-grid">
+        <div class="workflow-step"><b>1</b><h3>Members submit availability</h3></div>
+        <div class="workflow-step"><b>2</b><h3>Leaders review and approve</h3></div>
+        <div class="workflow-step"><b>3</b><h3>System generates schedules</h3></div>
+        <div class="workflow-step"><b>4</b><h3>Members receive notifications</h3></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="landing-footer reveal" id="contact">
+    <div>
+      <a href="#home" class="landing-brand footer-brand"><span class="landing-logo"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M7 17.2 16 9l9 8.2v8.3a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 7 25.5v-8.3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M16 14v8M12 18h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span><span>J146 Church</span></a>
+      <p>ServeSync ministry scheduling and coordination.</p>
+    </div>
+    <div class="footer-links">
+      <h3>Quick links</h3>
+      <a href="#features">Features</a>
+      <a href="#about">About</a>
+      <button onclick="showLoginPage()">Get Started</button>
+    </div>
+    <div class="footer-contact">
+      <h3>Contact</h3>
+      <p>J146 Church Ministry Team</p>
+      <p>servesync@j146church.org</p>
+      <div class="social-icons" aria-label="Social media links">
+        <a aria-label="Facebook" href="#"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 8h3V4h-3c-3.3 0-5 2-5 5v2H6v4h3v5h4v-5h3.2l.8-4h-4V9c0-.7.3-1 1-1Z"/></svg></a>
+        <a aria-label="Instagram" href="#"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="5" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.5" stroke="currentColor" stroke-width="2"/><path d="M17 7.3h.01" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></a>
+        <a aria-label="Email" href="mailto:servesync@j146church.org"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16v14H4V5Z" stroke="currentColor" stroke-width="2"/><path d="m4 7 8 6 8-6" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></a>
+      </div>
+    </div>
+  </footer>
+</div>
 
 <!-- ═══════════════════════════════
      AUTH PAGE

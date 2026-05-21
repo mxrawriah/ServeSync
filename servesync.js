@@ -10,6 +10,50 @@ function clearAuthFields() {
   });
 }
 
+function initLandingAnimations() {
+  const revealItems = document.querySelectorAll('.reveal');
+  if (!revealItems.length) return;
+  if (!('IntersectionObserver' in window)) {
+    revealItems.forEach(item => item.classList.add('visible'));
+    return;
+  }
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.15 });
+  revealItems.forEach(item => observer.observe(item));
+}
+
+function showLandingPage(updateUrl = true) {
+  const landing = document.getElementById('landing-page');
+  const auth = document.getElementById('auth-page');
+  const app = document.getElementById('app');
+  if (landing) landing.style.display = 'block';
+  if (auth) auth.style.display = 'none';
+  if (app) app.classList.remove('visible');
+  if (updateUrl && window.location.pathname !== '/') {
+    window.history.pushState({}, '', '/');
+  }
+}
+
+function showLoginPage(updateUrl = true) {
+  const landing = document.getElementById('landing-page');
+  const auth = document.getElementById('auth-page');
+  const app = document.getElementById('app');
+  if (landing) landing.style.display = 'none';
+  if (auth) auth.style.display = 'flex';
+  if (app) app.classList.remove('visible');
+  clearAuthFields();
+  setAuthRole('member');
+  if (updateUrl && window.location.pathname !== '/login') {
+    window.history.pushState({}, '', '/login');
+  }
+}
+
 // ════════════════════════════════════════
 // APP STATE
 // ════════════════════════════════════════
@@ -298,7 +342,9 @@ function enterApp(role) {
     document.documentElement.style.setProperty('--accent-bg','#FEF0EA');
   }
 
-  // Hide auth, show app
+  // Hide public pages, show app
+  const landing = document.getElementById('landing-page');
+  if (landing) landing.style.display = 'none';
   document.getElementById('auth-page').style.display = 'none';
   document.getElementById('app').classList.add('visible');
 
@@ -349,6 +395,8 @@ function buildSidebarNav(role) {
 // ════════════════════════════════════════
 function goTo(target) {
   // Show app if hidden
+  const landing = document.getElementById('landing-page');
+  if (landing) landing.style.display = 'none';
   document.getElementById('auth-page').style.display = 'none';
   document.getElementById('app').classList.add('visible');
 
@@ -1778,6 +1826,7 @@ document.addEventListener('keydown',e=>{
 });
 
 document.addEventListener('DOMContentLoaded',()=>{
+  initLandingAnimations();
   // Check for existing session or stored user
   const storedUser = localStorage.getItem('servesync_user');
   if (storedUser) {
@@ -1807,18 +1856,20 @@ document.addEventListener('DOMContentLoaded',()=>{
         }
         enterApp(user.role);
       } else {
-        // Show auth
-        document.getElementById('auth-page').style.display = 'flex';
-        document.getElementById('app').classList.remove('visible');
-        setAuthRole('member');
+        if (window.location.pathname === '/login' || window.location.hash === '#login') {
+          showLoginPage(false);
+        } else {
+          showLandingPage(false);
+        }
         updateBadges();
       }
     })
     .catch(() => {
-      // Show auth
-      document.getElementById('auth-page').style.display = 'flex';
-      document.getElementById('app').classList.remove('visible');
-      setAuthRole('member');
+      if (window.location.pathname === '/login' || window.location.hash === '#login') {
+        showLoginPage(false);
+      } else {
+        showLandingPage(false);
+      }
       updateBadges();
     });
   }
