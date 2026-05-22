@@ -11,20 +11,41 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const isVercel = Boolean(process.env.VERCEL);
+const sessionSecret = process.env.SESSION_SECRET || (isVercel ? undefined : 'dev-session-secret');
+
+const missingEnv = [
+  'SUPABASE_URL',
+  'SUPABASE_KEY',
+  'GOOGLE_CLIENT_ID',
+  'GOOGLE_CLIENT_SECRET'
+].filter((name) => !process.env[name]);
+
+if (!sessionSecret) {
+  missingEnv.push('SESSION_SECRET');
+}
+
+if (missingEnv.length) {
+  throw new Error(`Missing required environment variable${missingEnv.length === 1 ? '' : 's'}: ${missingEnv.join(', ')}`);
+}
 
 // Initialize Supabase
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
+  process.env.SUPABASE_ANON_KEY
 );
 
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
 app.use(session({
-  secret: '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',
+  secret: sessionSecret,
   resave: false,
-  saveUninitialized: true
+  saveUninitialized: true,
+  cookie: {
+    secure: isVercel,
+    sameSite: 'lax'
+  }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
@@ -1423,4 +1444,8 @@ function startServer(port, canFallback = true) {
   });
 }
 
-startServer(PORT);
+if (require.main === module) {
+  startServer(PORT);
+}
+
+module.exports = app;
